@@ -7,7 +7,7 @@ import {
   Settings, X, Music, Upload, Trash2, AlertTriangle, Info, Database, 
   BarChart3, PieChart, CheckCircle2, FileJson, Headphones, Speaker, 
   PlayCircle, StopCircle, RefreshCw, Sparkles, Image as ImageIcon,
-  UserCheck
+  UserCheck, Edit3
 } from 'lucide-react';
 import { AppState, Employee, Prize, Winner, Settings as AppSettings } from './types';
 import { SOUNDS, DEFAULT_FALLING_ICONS } from './constants';
@@ -16,6 +16,7 @@ import * as GeminiService from './services/geminiService';
 import FileUpload from './components/FileUpload';
 import SlotMachine from './components/SlotMachine';
 import FallingIcons from './components/FallingIcons';
+import DataManager from './components/DataManager';
 
 interface ModalConfig {
   isOpen: boolean;
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const [currentPrize, setCurrentPrize] = useState<Prize | null>(null);
   const [winner, setWinner] = useState<Employee | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDataManager, setShowDataManager] = useState(false); // State toggle Data Manager
   const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean }>({
     soundEnabled: true,
     demoMode: false,
@@ -236,6 +238,48 @@ const App: React.FC = () => {
     playSound('click');
   };
 
+  const handleDataUpdate = (type: 'employees' | 'prizes', data: any[]) => {
+    if (type === 'employees') {
+        setEmployees(data);
+        showAlert("Đã lưu", "Danh sách Cán bộ đã được cập nhật.");
+    } else {
+        // LƯU Ý QUAN TRỌNG:
+        // 'data' ở đây chứa danh sách giải thưởng mới từ DataManager.
+        // Trường 'quantity' trong DataManager thực chất là 'originalQuantity' (Tổng số lượng giải).
+        // Chúng ta cần tính lại 'quantity' (Số còn lại) để sử dụng trong game.
+        
+        const calculatedPrizes = data.map((p: any) => {
+            // Đếm số người đã trúng giải này
+            const winnersCount = winners.filter(w => w.prize.id === p.id).length;
+            
+            // Số lượng nhập vào là Tổng số
+            const totalQuantity = p.originalQuantity; // Hoặc p.quantity từ DataManager (đã được map logic)
+            
+            // Tính số còn lại. Nếu sửa tổng < số đã trúng, số còn lại = 0 (Không xóa winner)
+            const remaining = Math.max(0, totalQuantity - winnersCount);
+            
+            return {
+                ...p,
+                originalQuantity: totalQuantity,
+                quantity: remaining // Cập nhật số lượng thực tế để quay
+            };
+        });
+
+        setPrizes(calculatedPrizes);
+
+        // Nếu giải thưởng đang chọn bị xóa khỏi danh sách
+        if (currentPrize && !calculatedPrizes.find((p: any) => p.id === currentPrize.id)) {
+            // Reset về giải đầu tiên nếu có, hoặc null
+            setCurrentPrize(calculatedPrizes.length > 0 ? calculatedPrizes[0] : null);
+        } else if (currentPrize) {
+            // Cập nhật lại thông tin (số lượng) cho giải đang chọn
+            const updated = calculatedPrizes.find((p: any) => p.id === currentPrize.id);
+            if (updated) setCurrentPrize(updated);
+        }
+        showAlert("Đã lưu", "Cấu trúc Giải thưởng đã được cập nhật và tính toán lại.");
+    }
+  };
+
   const renderAudioCardLocal = (title: string, type: keyof typeof customSounds, description: string) => (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col justify-between group hover:border-brand-yellow/30 transition-all">
         <div className="flex justify-between items-start mb-1">
@@ -267,9 +311,11 @@ const App: React.FC = () => {
                 playSound('click');
             }} onDownloadTemplate={() => ExcelService.downloadTemplate('employee')} icon={<Users className="w-10 h-10 text-brand-yellow" />} />
             {employees.length > 0 && (
-                <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
-                    <CheckCircle2 className="text-green-400 w-5 h-5" />
-                    <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {employees.length} Cán bộ thành công</span>
+                <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
+                    <div className="flex items-center gap-3">
+                        <CheckCircle2 className="text-green-400 w-5 h-5" />
+                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {employees.length} Cán bộ</span>
+                    </div>
                 </div>
             )}
         </div>
@@ -281,12 +327,21 @@ const App: React.FC = () => {
                 playSound('click');
             }} onDownloadTemplate={() => ExcelService.downloadTemplate('prize')} icon={<Gift className="w-10 h-10 text-brand-yellow" />} />
             {prizes.length > 0 && (
-                <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
-                    <CheckCircle2 className="text-green-400 w-5 h-5" />
-                    <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {prizes.length} hạng mục giải thành công</span>
+                <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
+                    <div className="flex items-center gap-3">
+                        <CheckCircle2 className="text-green-400 w-5 h-5" />
+                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {prizes.length} hạng mục giải</span>
+                    </div>
                 </div>
             )}
         </div>
+      </div>
+      
+      {/* Nút Edit Data Global */}
+      <div className="flex justify-center">
+          <button onClick={() => setShowDataManager(true)} className="px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl hover:bg-white/20 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
+              <Database className="w-5 h-5 text-brand-yellow" /> Quản lý / Chỉnh sửa Dữ liệu
+          </button>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
@@ -351,6 +406,7 @@ const App: React.FC = () => {
                 <PieChart className="w-5 h-5" /> Chọn hạng mục Giải thưởng
               </h3>
               <div className="flex items-center gap-3">
+                  <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Quản lý dữ liệu"><Edit3 className="w-5 h-5" /></button>
                   <button onClick={() => setShowSettings(true)} className="p-3 bg-white/5 rounded-full text-teal-200 border border-white/5"><Settings className="w-5 h-5" /></button>
                   <button onClick={() => showConfirm("Reset", "Quay về màn hình cấu hình?", () => setAppState(AppState.SETUP))} className="p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10"><RotateCcw className="w-5 h-5" /></button>
               </div>
@@ -467,6 +523,17 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Data Manager Modal */}
+        {showDataManager && (
+            <DataManager 
+                employees={employees} 
+                prizes={prizes} 
+                onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
+                onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
+                onClose={() => setShowDataManager(false)} 
+            />
         )}
 
         {modal.isOpen && (
