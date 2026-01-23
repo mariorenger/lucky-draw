@@ -14,6 +14,17 @@ export const EXCEL_TEMPLATE_PRIZE = [
   { "Tên giải": "GIẢI KẾT NỐI (Quà lưu niệm D&A)", "Số lượng": 10 }
 ];
 
+// CẤU HÌNH THỜI GIAN SLOT MACHINE (Đơn vị: GIÂY)
+export const SLOT_CONFIG = {
+  SPIN_SPEED: 2.5,        // Tốc độ quay vòng lặp khi đang Spin
+  DECEL_DURATION: 3,      // Thời gian giảm tốc để dừng tại ô "Mừng hụt"
+  TEASE_PAUSE: 1,         // Thời gian dừng lại ở ô "Mừng hụt" (Lừa tình)
+  WINNER_MOVE: 1.5,       // Thời gian trượt từ ô "Mừng hụt" xuống "Winner thật"
+  BOUNCE: 0.5,            // Thời gian hiệu ứng nảy (Bounce) khi dừng hẳn
+  REEL_DELAY: 0.5,        // Độ trễ giữa các cột (Cột 2 dừng sau cột 1 bao nhiêu s)
+  FREEZE_TIME: 2          // Thời gian ĐỨNG IM (Highlight vàng) trước khi hiện Modal
+};
+
 // Cấu hình icon rơi mặc định
 // LƯU Ý: File ảnh phải nằm trong thư mục gốc (public) của web server thì mới hiển thị được.
 // Nếu không thấy ảnh, hãy sử dụng tính năng "Nạp file" trong giao diện Cấu hình (Settings).
@@ -24,7 +35,6 @@ export const DEFAULT_FALLING_ICONS = [
   "https://www.saokim.com.vn/wp-content/uploads/2023/01/Bieu-Tuong-Logo-Ngan-Hang-BIDV.png",
   "https://img.pikbest.com/origin/10/09/94/57YpIkbEsTi8f.png!sw800",
   "https://cdn.pnj.io/images/detailed/70/gj0000y060001-bao-li-xi-loi-vang-24k-pnj-than-tai-02.png"
-  // "https://static.vecteezy.com/system/resources/previews/019/049/666/original/gold-coin-money-symbol-icon-png.png"  // Icon trang trí (Tuyết/Vàng)
 ];
 
 export const SOUNDS = {

@@ -7,10 +7,10 @@ import {
   Settings, X, Music, Upload, Trash2, AlertTriangle, Info, Database, 
   BarChart3, PieChart, CheckCircle2, FileJson, Headphones, Speaker, 
   PlayCircle, StopCircle, RefreshCw, Sparkles, Image as ImageIcon,
-  UserCheck, Edit3
+  UserCheck, Edit3, Minus, Plus, Clock
 } from 'lucide-react';
 import { AppState, Employee, Prize, Winner, Settings as AppSettings } from './types';
-import { SOUNDS, DEFAULT_FALLING_ICONS } from './constants';
+import { SOUNDS, DEFAULT_FALLING_ICONS, SLOT_CONFIG } from './constants';
 import * as ExcelService from './services/excelService';
 import * as GeminiService from './services/geminiService';
 import FileUpload from './components/FileUpload';
@@ -35,9 +35,16 @@ const App: React.FC = () => {
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [winners, setWinners] = useState<Winner[]>([]);
   const [currentPrize, setCurrentPrize] = useState<Prize | null>(null);
-  const [winner, setWinner] = useState<Employee | null>(null);
+  
+  // Changed from single winner to batch winners array
+  const [batchWinners, setBatchWinners] = useState<Employee[]>([]); 
+  
+  // New States for Multi-Spin
+  const [spinCount, setSpinCount] = useState<number>(1);
+  const [spinDuration, setSpinDuration] = useState<number>(10); // Seconds
+
   const [showSettings, setShowSettings] = useState(false);
-  const [showDataManager, setShowDataManager] = useState(false); // State toggle Data Manager
+  const [showDataManager, setShowDataManager] = useState(false);
   const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean }>({
     soundEnabled: true,
     demoMode: false,
@@ -57,7 +64,7 @@ const App: React.FC = () => {
   
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string>("");
-  const [lastWinId, setLastWinId] = useState<string | null>(null);
+  const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
 
   // Sounds refs
   const spinSound = useRef<Howl | null>(null);
@@ -94,6 +101,22 @@ const App: React.FC = () => {
       bgMusic.current?.pause();
     }
   }, [settings.bgMusicEnabled, appState]);
+
+  // Adjust spinCount if prize quantity changes or runs low
+  useEffect(() => {
+    if (currentPrize) {
+        // Ensure we don't spin more than available prizes (unless demo mode)
+        const maxAvailable = settings.demoMode ? 10 : currentPrize.quantity;
+        const eligibleCount = employees.length - winners.length;
+        const maxPossible = Math.min(maxAvailable, eligibleCount);
+        
+        if (spinCount > maxPossible && maxPossible > 0) {
+            setSpinCount(maxPossible);
+        } else if (spinCount === 0 && maxPossible > 0) {
+            setSpinCount(1);
+        }
+    }
+  }, [currentPrize, winners.length, employees.length, settings.demoMode]);
 
   const playSound = (type: 'spin' | 'win' | 'click') => {
     if (!settings.soundEnabled) return;
@@ -134,44 +157,96 @@ const App: React.FC = () => {
 
   const startSpin = () => {
     if (!currentPrize) return showAlert("Cảnh báo", "Vui lòng chọn Giải thưởng Insight cần trao!");
+    
+    // Get eligible list
     const eligible = employees.filter(emp => !winners.find(w => w.employee.id === emp.id));
+    
     if (eligible.length === 0) return showAlert("Hết dữ liệu", "Tất cả các node dữ liệu đã được gán giải!");
-    if (currentPrize.quantity <= 0 && !settings.demoMode) return showAlert("Hết giải", "Giải thưởng này đã đạt ngưỡng giới hạn!");
+    if (currentPrize.quantity < spinCount && !settings.demoMode) return showAlert("Không đủ giải", `Chỉ còn ${currentPrize.quantity} giải, không đủ để quay ${spinCount} người.`);
+    if (eligible.length < spinCount) return showAlert("Không đủ người", `Chỉ còn ${eligible.length} người chưa trúng, không đủ để quay ${spinCount} giải.`);
 
     setAppState(AppState.SPINNING);
+    // Khi bắt đầu quay, xóa batchWinners cũ để SlotMachine biết là đang quay
+    setBatchWinners([]);
+    
     bgMusic.current?.fade(0.1, 0, 500);
     playSound('spin');
 
-    const duration = 12000 + Math.random() * 5000;
-
+    // STEP 1: GIAI ĐOẠN QUAY (Spinning) - Sử dụng biến spinDuration do user setting
+    
     setTimeout(() => {
-      stopSound('spin');
-      playSound('win');
+      // HẾT THỜI GIAN SPIN -> BẮT ĐẦU QUY TRÌNH DỪNG
       
-      const winnerIndex = Math.floor(Math.random() * eligible.length);
-      const selectedWinner = eligible[winnerIndex];
-      const winId = Date.now().toString();
+      const selectedWinners: Employee[] = [];
+      const tempEligible = [...eligible];
+      
+      for(let i = 0; i < spinCount; i++) {
+         if (tempEligible.length === 0) break;
+         const randomIndex = Math.floor(Math.random() * tempEligible.length);
+         selectedWinners.push(tempEligible[randomIndex]);
+         tempEligible.splice(randomIndex, 1);
+      }
 
-      setWinner(selectedWinner);
-      setLastWinId(winId);
-      setAppState(AppState.WINNER);
-      triggerFireworks(); // Chạy hiệu ứng pháo hoa mới
+      const newWinnersData: Winner[] = [];
+      const newBatchIds: string[] = [];
 
+      selectedWinners.forEach(w => {
+          const winId = Date.now().toString() + Math.random().toString().substr(2, 5);
+          newBatchIds.push(winId);
+          newWinnersData.push({
+             id: winId,
+             employee: w,
+             prize: { ...currentPrize, quantity: currentPrize.quantity - spinCount }, 
+             timestamp: new Date().toISOString(),
+             aiMessage: "" 
+          });
+      });
+
+      // Truyền danh sách Winner vào SlotMachine -> SlotMachine bắt đầu Animation Dừng
+      setBatchWinners(selectedWinners);
+      setLastBatchIds(newBatchIds);
+
+      // AI Generation starts immediately in background
       setAiLoading(true);
-      GeminiService.generateCongratulation(selectedWinner, currentPrize.name)
-        .then(msg => {
-            setAiMessage(msg);
-            setAiLoading(false);
-            setWinners(prev => prev.map(w => w.id === winId ? { ...w, aiMessage: msg } : w));
-        });
+      if (selectedWinners.length === 1) {
+          GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name)
+            .then(msg => {
+                setAiMessage(msg);
+                setAiLoading(false);
+                setWinners(prev => prev.map(w => w.id === newBatchIds[0] ? { ...w, aiMessage: msg } : w));
+            });
+      } else {
+          setAiMessage(`Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!`);
+          setAiLoading(false);
+      }
 
       if (!settings.demoMode) {
-        setPrizes(prev => prev.map(p => p.id === currentPrize.id ? { ...p, quantity: p.quantity - 1 } : p));
-        const prizeSnapshot = { ...currentPrize, quantity: currentPrize.quantity - 1 };
-        setCurrentPrize(prizeSnapshot);
-        setWinners(prev => [{ id: winId, employee: selectedWinner, prize: prizeSnapshot, timestamp: new Date().toISOString(), aiMessage: "" }, ...prev]);
+        setPrizes(prev => prev.map(p => p.id === currentPrize.id ? { ...p, quantity: Math.max(0, p.quantity - selectedWinners.length) } : p));
+        const updatedPrize = { ...currentPrize, quantity: Math.max(0, currentPrize.quantity - selectedWinners.length) };
+        setCurrentPrize(updatedPrize);
+        setWinners(prev => [...newWinnersData, ...prev]);
       }
-    }, duration);
+
+      // STEP 2: TÍNH TOÁN THỜI GIAN CHỜ CHÍNH XÁC
+      
+      // Thời gian delay của cột quay cuối cùng (Nếu quay 3 người thì cột 3 dừng trễ hơn cột 1)
+      const maxReelDelay = (spinCount - 1) * SLOT_CONFIG.REEL_DELAY; 
+      
+      // Tổng thời gian Animation dừng (SlotMachine)
+      // = Delay cột cuối + Giảm tốc + Mừng hụt + Trượt Winner + Nảy
+      const stoppingAnimationDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
+      
+      // Tổng thời gian chờ = Animation dừng + Thời gian Highlight vàng (Freeze)
+      const totalWaitTime = (stoppingAnimationDuration + SLOT_CONFIG.FREEZE_TIME) * 1000; // Đổi sang ms
+
+      setTimeout(() => {
+          stopSound('spin');
+          playSound('win');
+          setAppState(AppState.WINNER); // -> Hiện Modal
+          triggerFireworks();
+      }, totalWaitTime); 
+
+    }, spinDuration * 1000); // <-- Thời gian quay (Spinning)
   };
 
   const triggerFireworks = () => {
@@ -208,30 +283,40 @@ const App: React.FC = () => {
   const handleReroll = (winId: string | null) => {
     if (!winId) return;
     const targetWinner = winners.find(w => w.id === winId);
-    showConfirm("Xác nhận Rollback", `Hủy kết quả của ${targetWinner?.employee.name}? Giải thưởng sẽ được hoàn trả lại Database.`, () => executeReroll(winId));
+    showConfirm("Xác nhận Rollback", `Hủy kết quả của ${targetWinner?.employee.name}? Giải thưởng sẽ được hoàn trả lại Database.`, () => executeReroll([winId]));
   };
 
-  const executeReroll = (winId: string) => {
-    const targetWinner = winners.find(w => w.id === winId);
-    if (!targetWinner) return;
+  // Allow rerolling the entire batch
+  const handleBatchReroll = () => {
+      showConfirm("Hủy kết quả lượt này?", "Toàn bộ danh sách trúng thưởng vừa rồi sẽ bị hủy và giải thưởng sẽ được hoàn lại.", () => executeReroll(lastBatchIds));
+  };
+
+  const executeReroll = (winIds: string[]) => {
+    if (winIds.length === 0) return;
+
+    // Find the prize associated (assuming all in batch are same prize)
+    const sampleWin = winners.find(w => w.id === winIds[0]);
+    if (!sampleWin) return;
+    const prizeId = sampleWin.prize.id;
 
     if (!settings.demoMode) {
       setPrizes(prevPrizes => {
-        const newPrizes = prevPrizes.map(p => p.id === targetWinner.prize.id ? { ...p, quantity: p.quantity + 1 } : p);
-        const restored = newPrizes.find(p => p.id === targetWinner.prize.id);
+        const newPrizes = prevPrizes.map(p => p.id === prizeId ? { ...p, quantity: p.quantity + winIds.length } : p);
+        const restored = newPrizes.find(p => p.id === prizeId);
         if (restored) setCurrentPrize(restored);
         return newPrizes;
       });
     }
-    setWinners(prevWinners => prevWinners.filter(w => w.id !== winId));
-    if (appState === AppState.WINNER && lastWinId === winId) resetForNext();
+
+    setWinners(prevWinners => prevWinners.filter(w => !winIds.includes(w.id)));
+    if (appState === AppState.WINNER) resetForNext();
     setModal({ ...modal, isOpen: false });
     playSound('click');
   };
 
   const resetForNext = () => {
-    setWinner(null);
-    setLastWinId(null);
+    setBatchWinners([]);
+    setLastBatchIds([]);
     setAiMessage("");
     setAppState(AppState.READY);
     if (settings.bgMusicEnabled) bgMusic.current?.fade(0, 0.25, 500);
@@ -243,36 +328,19 @@ const App: React.FC = () => {
         setEmployees(data);
         showAlert("Đã lưu", "Danh sách Cán bộ đã được cập nhật.");
     } else {
-        // LƯU Ý QUAN TRỌNG:
-        // 'data' ở đây chứa danh sách giải thưởng mới từ DataManager.
-        // Trường 'quantity' trong DataManager thực chất là 'originalQuantity' (Tổng số lượng giải).
-        // Chúng ta cần tính lại 'quantity' (Số còn lại) để sử dụng trong game.
-        
+        // Calculation logic preserved
         const calculatedPrizes = data.map((p: any) => {
-            // Đếm số người đã trúng giải này
             const winnersCount = winners.filter(w => w.prize.id === p.id).length;
-            
-            // Số lượng nhập vào là Tổng số
-            const totalQuantity = p.originalQuantity; // Hoặc p.quantity từ DataManager (đã được map logic)
-            
-            // Tính số còn lại. Nếu sửa tổng < số đã trúng, số còn lại = 0 (Không xóa winner)
+            const totalQuantity = p.originalQuantity;
             const remaining = Math.max(0, totalQuantity - winnersCount);
-            
-            return {
-                ...p,
-                originalQuantity: totalQuantity,
-                quantity: remaining // Cập nhật số lượng thực tế để quay
-            };
+            return { ...p, originalQuantity: totalQuantity, quantity: remaining };
         });
 
         setPrizes(calculatedPrizes);
 
-        // Nếu giải thưởng đang chọn bị xóa khỏi danh sách
         if (currentPrize && !calculatedPrizes.find((p: any) => p.id === currentPrize.id)) {
-            // Reset về giải đầu tiên nếu có, hoặc null
             setCurrentPrize(calculatedPrizes.length > 0 ? calculatedPrizes[0] : null);
         } else if (currentPrize) {
-            // Cập nhật lại thông tin (số lượng) cho giải đang chọn
             const updated = calculatedPrizes.find((p: any) => p.id === currentPrize.id);
             if (updated) setCurrentPrize(updated);
         }
@@ -296,6 +364,7 @@ const App: React.FC = () => {
 
   const renderSetup = () => (
     <div className="relative z-10 max-w-6xl mx-auto w-full animate-fade-in space-y-10 mt-6 pb-20 px-4">
+      {/* Keeping setup UI exactly as before */}
       <div className="text-center space-y-4">
         <h1 className="text-5xl md:text-8xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow drop-shadow-lg tracking-tight uppercase">
           D&A YEP 2025
@@ -337,7 +406,6 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* Nút Edit Data Global */}
       <div className="flex justify-center">
           <button onClick={() => setShowDataManager(true)} className="px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl hover:bg-white/20 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
               <Database className="w-5 h-5 text-brand-yellow" /> Quản lý / Chỉnh sửa Dữ liệu
@@ -394,7 +462,6 @@ const App: React.FC = () => {
   );
 
   const renderGame = () => {
-    // Calculate remaining candidates
     const eligibleCount = employees.length - winners.length;
 
     return (
@@ -407,8 +474,22 @@ const App: React.FC = () => {
               </h3>
               <div className="flex items-center gap-3">
                   <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Quản lý dữ liệu"><Edit3 className="w-5 h-5" /></button>
-                  <button onClick={() => setShowSettings(true)} className="p-3 bg-white/5 rounded-full text-teal-200 border border-white/5"><Settings className="w-5 h-5" /></button>
-                  <button onClick={() => showConfirm("Reset", "Quay về màn hình cấu hình?", () => setAppState(AppState.SETUP))} className="p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10"><RotateCcw className="w-5 h-5" /></button>
+                  {/* REMOVED SETTINGS BUTTON HERE */}
+                  <button 
+                      onClick={() => showConfirm(
+                          "Reset", 
+                          "Quay về màn hình cấu hình? (Dữ liệu người trúng thưởng lượt này sẽ bị xóa nếu chưa lưu)", 
+                          () => {
+                              setBatchWinners([]); // Clear current winners
+                              setLastBatchIds([]);
+                              setAiMessage("");
+                              setAppState(AppState.SETUP);
+                          }
+                      )} 
+                      className="p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10 hover:bg-red-500/20"
+                  >
+                      <RotateCcw className="w-5 h-5" />
+                  </button>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -433,10 +514,55 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          <SlotMachine candidates={employees.filter(e => !winners.find(w => w.employee.id === e.id))} isSpinning={appState === AppState.SPINNING} winner={winner} />
+          <SlotMachine 
+            candidates={employees.filter(e => !winners.find(w => w.employee.id === e.id))} 
+            isSpinning={appState === AppState.SPINNING} 
+            winners={appState === AppState.WINNER || (appState === AppState.SPINNING && batchWinners.length > 0) ? batchWinners : []} // Pass batchWinners during spin logic phase too to allow stopping
+            spinCount={spinCount}
+          />
           
           {appState === AppState.READY && (
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-20">
+            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4">
+              {/* Mini Controls for Spin Count and Duration */}
+              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-lg mb-2">
+                  <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1">
+                      <button 
+                        onClick={() => setSpinCount(Math.max(1, spinCount - 1))} 
+                        className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition"
+                      >
+                          <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="flex flex-col items-center w-12">
+                          <span className="text-xs text-brand-yellow font-black uppercase">Người</span>
+                          <span className="text-lg font-bold leading-none">{spinCount}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                            const max = settings.demoMode ? 100 : (currentPrize?.quantity || 1);
+                            setSpinCount(Math.min(max, spinCount + 1));
+                        }} 
+                        className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition"
+                      >
+                          <Plus className="w-4 h-4" />
+                      </button>
+                  </div>
+
+                  <div className="w-px h-8 bg-white/10 mx-1"></div>
+
+                  <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1">
+                      <button onClick={() => setSpinDuration(Math.max(5, spinDuration - 1))} className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition">
+                          <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="flex flex-col items-center w-12">
+                          <span className="text-xs text-brand-yellow font-black uppercase">Giây</span>
+                          <span className="text-lg font-bold leading-none">{spinDuration}s</span>
+                      </div>
+                      <button onClick={() => setSpinDuration(Math.min(60, spinDuration + 1))} className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition">
+                          <Plus className="w-4 h-4" />
+                      </button>
+                  </div>
+              </div>
+
               <button onClick={startSpin} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
                 BẮT ĐẦU QUAY
               </button>
@@ -444,6 +570,7 @@ const App: React.FC = () => {
           )}
         </div>
 
+        {/* History Panel */}
         <div className="mt-12 glass-panel rounded-3xl p-8 border-t-4 border-t-brand-yellow relative z-20">
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-2xl font-bold flex items-center gap-3 text-white">
@@ -471,38 +598,45 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {appState === AppState.WINNER && winner && (
+        {/* Winner Modal - Updated for Multiple Winners */}
+        {appState === AppState.WINNER && batchWinners.length > 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-3xl animate-fade-in">
-            {/* Rotating Sunburst Background */}
             <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden pointer-events-none">
                <div className="w-[200vw] h-[200vw] bg-[conic-gradient(from_0deg_at_50%_50%,rgba(255,198,47,0.1)_0deg,transparent_20deg,rgba(255,198,47,0.1)_40deg,transparent_60deg,rgba(255,198,47,0.1)_80deg,transparent_100deg,rgba(255,198,47,0.1)_120deg,transparent_140deg,rgba(255,198,47,0.1)_160deg,transparent_180deg,rgba(255,198,47,0.1)_200deg,transparent_220deg,rgba(255,198,47,0.1)_240deg,transparent_260deg,rgba(255,198,47,0.1)_280deg,transparent_300deg,rgba(255,198,47,0.1)_320deg,transparent_340deg,rgba(255,198,47,0.1)_360deg)] animate-[spin_20s_linear_infinite]" />
             </div>
 
-            <div className="relative z-10 w-full max-w-2xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-6 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 hover:scale-[1.01]">
-              <div className="relative z-10 flex flex-col items-center gap-6">
-                <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-8 py-2 rounded-full uppercase text-lg md:text-xl animate-bounce tracking-[0.2em] shadow-[0_0_30px_rgba(255,198,47,0.8)] border-2 border-white">
-                  WINNER
+            <div className="relative z-10 w-full max-w-4xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-6 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 flex flex-col max-h-[90vh]">
+              <div className="relative z-10 flex flex-col items-center gap-4 h-full">
+                <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-8 py-2 rounded-full uppercase text-lg md:text-xl animate-bounce tracking-[0.2em] shadow-[0_0_30px_rgba(255,198,47,0.8)] border-2 border-white shrink-0">
+                  {batchWinners.length > 1 ? 'DANH SÁCH TRÚNG THƯỞNG' : 'WINNER'}
                 </div>
-                <div className="space-y-2 w-full">
-                  <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-300 uppercase drop-shadow-[0_4px_0_rgba(0,0,0,0.5)] filter drop-shadow-[0_0_20px_rgba(255,198,47,0.5)]">
-                    {winner.name}
-                  </h1>
-                  
-                  {/* Hiển thị Email để phân biệt trùng tên */}
-                  <p className="text-base md:text-lg text-teal-200 font-medium tracking-wide font-mono">
-                    {winner.email}
-                  </p>
-
-                  <p className="text-lg md:text-xl text-brand-yellow font-bold uppercase tracking-widest mt-1">{winner.department}</p>
-                  
-                  <div className="py-3 my-3 border-y-2 border-brand-yellow/30 w-full bg-brand-yellow/5">
-                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-1 uppercase tracking-widest">Đã trúng giải</p>
+                
+                <div className="py-2 shrink-0">
+                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-1 uppercase tracking-widest">Giải thưởng</p>
                       <div className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-2xl leading-tight">
                           {currentPrize?.name}
                       </div>
-                  </div>
+                </div>
 
-                  <div className="min-h-[80px] bg-black/20 p-4 rounded-3xl italic text-base md:text-lg text-teal-100 max-w-xl mx-auto leading-relaxed border border-brand-yellow/10 shadow-inner">
+                {/* List Container */}
+                <div className={`w-full overflow-y-auto custom-scrollbar p-2 ${batchWinners.length > 1 ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'flex items-center justify-center'}`}>
+                    {batchWinners.map((w, idx) => (
+                        <div key={idx} className={`bg-black/20 p-4 rounded-2xl border border-brand-yellow/20 ${batchWinners.length === 1 ? 'w-full max-w-xl py-10' : ''}`}>
+                             <h1 className={`${batchWinners.length === 1 ? 'text-4xl md:text-6xl' : 'text-xl md:text-2xl'} font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-300 uppercase`}>
+                                {w.name}
+                             </h1>
+                             <p className={`${batchWinners.length === 1 ? 'text-lg' : 'text-sm'} text-teal-200 font-medium tracking-wide font-mono mt-1`}>
+                                {w.email}
+                             </p>
+                             <p className={`${batchWinners.length === 1 ? 'text-xl' : 'text-base'} text-brand-yellow font-bold uppercase tracking-widest mt-1`}>
+                                {w.department}
+                             </p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* AI Message Area */}
+                <div className="min-h-[60px] bg-black/20 p-4 rounded-3xl italic text-base md:text-lg text-teal-100 max-w-xl mx-auto leading-relaxed border border-brand-yellow/10 shadow-inner w-full shrink-0">
                      {aiLoading ? (
                         <p className="animate-pulse text-brand-yellow flex items-center justify-center gap-3">
                            <RefreshCw className="animate-spin w-4 h-4" /> AI đang soạn lời chúc...
@@ -514,11 +648,11 @@ const App: React.FC = () => {
                             <span className="text-2xl text-brand-yellow absolute -bottom-4 -right-1">"</span>
                         </div>
                      )}
-                  </div>
-                  <div className="pt-4 flex flex-col md:flex-row justify-center gap-3">
-                    <button onClick={() => handleReroll(lastWinId)} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">HỦY / QUAY LẠI</button>
+                </div>
+
+                <div className="pt-4 flex flex-col md:flex-row justify-center gap-3 shrink-0">
+                    <button onClick={handleBatchReroll} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">HỦY / QUAY LẠI</button>
                     <button onClick={resetForNext} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">XÁC NHẬN / TIẾP TỤC</button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -556,7 +690,15 @@ const App: React.FC = () => {
                 {modal.type === 'confirm' ? (
                   <>
                     <button onClick={() => setModal({ ...modal, isOpen: false })} className="flex-1 py-5 bg-white/5 text-teal-100 font-bold rounded-2xl border border-white/10 uppercase tracking-widest text-sm transition">Hủy</button>
-                    <button onClick={modal.onConfirm} className="flex-1 py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl shadow-xl uppercase tracking-widest text-sm active:scale-95">Xác nhận</button>
+                    <button 
+                        onClick={() => {
+                            if (modal.onConfirm) modal.onConfirm();
+                            setModal({ ...modal, isOpen: false });
+                        }} 
+                        className="flex-1 py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl shadow-xl uppercase tracking-widest text-sm active:scale-95"
+                    >
+                        Xác nhận
+                    </button>
                   </>
                 ) : (
                   <button onClick={() => setModal({ ...modal, isOpen: false })} className="w-full py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-sm active:scale-95">Đã hiểu</button>
