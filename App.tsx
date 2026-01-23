@@ -524,40 +524,6 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Data Manager Modal */}
-        {showDataManager && (
-            <DataManager 
-                employees={employees} 
-                prizes={prizes} 
-                onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
-                onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
-                onClose={() => setShowDataManager(false)} 
-            />
-        )}
-
-        {modal.isOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl">
-            <div className="bg-brand-emeraldDark border-2 border-brand-yellow/30 p-12 rounded-[48px] w-full max-w-lg shadow-2xl text-center">
-              <div className="flex flex-col items-center gap-8">
-                <div className="space-y-4">
-                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{modal.title}</h2>
-                  <p className="text-teal-100 text-lg leading-relaxed">{modal.message}</p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-5 w-full pt-6">
-                  {modal.type === 'confirm' ? (
-                    <>
-                      <button onClick={() => setModal({ ...modal, isOpen: false })} className="flex-1 py-5 bg-white/5 text-teal-100 font-bold rounded-2xl border border-white/10 uppercase tracking-widest text-sm transition">Hủy</button>
-                      <button onClick={modal.onConfirm} className="flex-1 py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl shadow-xl uppercase tracking-widest text-sm active:scale-95">Xác nhận</button>
-                    </>
-                  ) : (
-                    <button onClick={() => setModal({ ...modal, isOpen: false })} className="w-full py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-sm active:scale-95">Đã hiểu</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -566,6 +532,40 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-12 font-sans overflow-x-hidden relative">
       {settings.fallingIconsEnabled && <FallingIcons icons={fallingIcons} />}
       {appState === AppState.SETUP ? renderSetup() : renderGame()}
+      
+      {/* Global Modals - Moved to root level to work in both Setup and Game screens */}
+      {showDataManager && (
+          <DataManager 
+              employees={employees} 
+              prizes={prizes} 
+              onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
+              onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
+              onClose={() => setShowDataManager(false)} 
+          />
+      )}
+
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl">
+          <div className="bg-brand-emeraldDark border-2 border-brand-yellow/30 p-12 rounded-[48px] w-full max-w-lg shadow-2xl text-center">
+            <div className="flex flex-col items-center gap-8">
+              <div className="space-y-4">
+                <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{modal.title}</h2>
+                <p className="text-teal-100 text-lg leading-relaxed">{modal.message}</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-5 w-full pt-6">
+                {modal.type === 'confirm' ? (
+                  <>
+                    <button onClick={() => setModal({ ...modal, isOpen: false })} className="flex-1 py-5 bg-white/5 text-teal-100 font-bold rounded-2xl border border-white/10 uppercase tracking-widest text-sm transition">Hủy</button>
+                    <button onClick={modal.onConfirm} className="flex-1 py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl shadow-xl uppercase tracking-widest text-sm active:scale-95">Xác nhận</button>
+                  </>
+                ) : (
+                  <button onClick={() => setModal({ ...modal, isOpen: false })} className="w-full py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-sm active:scale-95">Đã hiểu</button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
