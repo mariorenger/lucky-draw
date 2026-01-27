@@ -132,7 +132,7 @@ const App: React.FC = () => {
   const handleAudioUpload = (type: keyof typeof customSounds, file: File) => {
     const url = URL.createObjectURL(file);
     setCustomSounds(prev => ({ ...prev, [type]: url }));
-    showAlert("Thành công", `Đã cập nhật âm thanh ${type.toUpperCase()} tùy chỉnh.`);
+    showAlert("Thành công", `Đã cập nhật âm thanh ${(type as string).toUpperCase()} tùy chỉnh.`);
   };
 
   const handleIconUpload = (file: File) => {
@@ -236,8 +236,8 @@ const App: React.FC = () => {
       // = Delay cột cuối + Giảm tốc + Mừng hụt + Trượt Winner + Nảy
       const stoppingAnimationDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
       
-      // Tổng thời gian chờ = Animation dừng + Thời gian Highlight vàng (Freeze)
-      const totalWaitTime = (stoppingAnimationDuration + SLOT_CONFIG.FREEZE_TIME) * 1000; // Đổi sang ms
+      // Tổng thời gian chờ = Animation dừng + Thời gian Highlight vàng (Freeze) + SAFETY BUFFER (Để tránh lag)
+      const totalWaitTime = (stoppingAnimationDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000; // Đổi sang ms
 
       setTimeout(() => {
           stopSound('spin');
@@ -625,7 +625,7 @@ const App: React.FC = () => {
                              <h1 className={`${batchWinners.length === 1 ? 'text-4xl md:text-6xl' : 'text-xl md:text-2xl'} font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-300 uppercase`}>
                                 {w.name}
                              </h1>
-                             <p className={`${batchWinners.length === 1 ? 'text-lg' : 'text-sm'} text-teal-200 font-medium tracking-wide font-mono mt-1`}>
+                             <p className={`${batchWinners.length === 1 ? 'text-lg' : 'text-teal-200'} font-medium tracking-wide font-mono mt-1`}>
                                 {w.email}
                              </p>
                              <p className={`${batchWinners.length === 1 ? 'text-xl' : 'text-base'} text-brand-yellow font-bold uppercase tracking-widest mt-1`}>

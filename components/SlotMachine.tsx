@@ -26,19 +26,21 @@ const shuffle = (array: any[]) => {
   return newArray;
 };
 
+interface ReelProps {
+    candidates: Employee[];
+    isSpinning: boolean;
+    winner: Employee | null;
+    index: number;
+    totalReels: number;
+}
+
 // Component: Cột Quay (Reel)
-const Reel = ({ 
+const Reel: React.FC<ReelProps> = ({ 
     candidates, 
     isSpinning, 
     winner, 
     index,
     totalReels 
-}: { 
-    candidates: Employee[], 
-    isSpinning: boolean, 
-    winner: Employee | null, 
-    index: number,
-    totalReels: number
 }) => {
     const controls = useAnimation();
     const [displayList, setDisplayList] = useState<Employee[]>([]);

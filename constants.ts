@@ -22,7 +22,8 @@ export const SLOT_CONFIG = {
   WINNER_MOVE: 1.5,       // Thời gian trượt từ ô "Mừng hụt" xuống "Winner thật"
   BOUNCE: 0.5,            // Thời gian hiệu ứng nảy (Bounce) khi dừng hẳn
   REEL_DELAY: 0.5,        // Độ trễ giữa các cột (Cột 2 dừng sau cột 1 bao nhiêu s)
-  FREEZE_TIME: 2          // Thời gian ĐỨNG IM (Highlight vàng) trước khi hiện Modal
+  FREEZE_TIME: 2.5,       // Thời gian ĐỨNG IM (Highlight vàng) trước khi hiện Modal (Tăng nhẹ lên 2.5 cho chắc chắn)
+  SAFETY_BUFFER: 0.5      // Thời gian đệm an toàn để tránh lệch pha giữa JS và Animation
 };
 
 // Cấu hình icon rơi mặc định
