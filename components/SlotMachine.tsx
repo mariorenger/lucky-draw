@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, useAnimation } from 'framer-motion';
 import { Employee } from '../types';
 import { SLOT_CONFIG } from '../constants';
@@ -49,22 +49,49 @@ const Reel: React.FC<ReelProps> = ({
     const [teaseIndex, setTeaseIndex] = useState<number | null>(null);
     // State xác nhận đã dừng hẳn tại Winner thật
     const [isFinished, setIsFinished] = useState(false);
+    
+    // Ref để theo dõi winner đã được animate chưa -> Tránh chạy lại Animation
+    const lastWinnerIdRef = useRef<string | null>(null);
+    
+    // Ref quan trọng: Lưu trữ danh sách "Hạ cánh" (Landing List). 
+    // Khi đã dừng tại winner, ta phải KHÓA danh sách này lại, không cho phép shuffle thay đổi nó nữa.
+    const landingListRef = useRef<Employee[]>([]);
 
+    // Effect 1: Quản lý dữ liệu hiển thị cơ bản
     useEffect(() => {
         if (candidates.length === 0) return;
-        setDisplayList(shuffle(candidates).slice(0, 30));
-    }, [candidates]);
+        
+        // LOGIC KHÓA DỮ LIỆU:
+        // Nếu đang có winner (dù là đang chạy animation hay đang freeze),
+        // Hoặc đang quay (spinning)
+        // -> TUYỆT ĐỐI KHÔNG trộn lại danh sách từ candidates gốc.
+        // Chỉ trộn khi máy đang ở trạng thái nghỉ (Idle) và chưa có kết quả.
+        if (winner || isSpinning || lastWinnerIdRef.current) return;
 
+        setDisplayList(shuffle(candidates).slice(0, 30));
+    }, [candidates, winner, isSpinning]);
+
+    // Effect 2: Quản lý Animation
     useEffect(() => {
         const runAnimation = async () => {
             // CASE 1: TRẠNG THÁI DỪNG & CÓ KẾT QUẢ (WINNER)
             if (winner) {
+                // Nếu đây là winner cũ (đã/đang hiển thị), không chạy lại logic tính toán
+                if (lastWinnerIdRef.current === winner.id) {
+                     // Đảm bảo displayList vẫn là danh sách landing đã lưu, tránh bị reset
+                     if (landingListRef.current.length > 0) {
+                         setDisplayList(landingListRef.current);
+                     }
+                     return;
+                }
+                
+                lastWinnerIdRef.current = winner.id;
                 controls.stop();
                 setTeaseIndex(null);
                 setIsFinished(false);
                 
                 // --- CẤU TRÚC DANH SÁCH DỪNG ---
-                const stopDelay = index * SLOT_CONFIG.REEL_DELAY; // Delay biến động theo cấu hình
+                const stopDelay = index * SLOT_CONFIG.REEL_DELAY; 
                 
                 // 1. Buffer đầu
                 const bufferCount = 12;
@@ -86,7 +113,9 @@ const Reel: React.FC<ReelProps> = ({
                     candidates[Math.floor(Math.random() * candidates.length)]
                 );
 
+                // Tạo danh sách hạ cánh và KHÓA nó vào Ref
                 const landingList = [...bufferList, teaseUser, ...gapList, winner, ...tailList];
+                landingListRef.current = landingList; 
                 setDisplayList(landingList);
 
                 // Reset vị trí về 0 
@@ -99,7 +128,7 @@ const Reel: React.FC<ReelProps> = ({
                 const teaseY = -((idxTease - 1) * ITEM_HEIGHT);
                 const winnerY = -((idxWinner - 1) * ITEM_HEIGHT);
 
-                // BƯỚC 1: Giảm tốc và dừng tại Tease User (Sử dụng biến DECEL_DURATION)
+                // BƯỚC 1: Giảm tốc và dừng tại Tease User 
                 await controls.start({
                     y: teaseY,
                     transition: {
@@ -110,9 +139,9 @@ const Reel: React.FC<ReelProps> = ({
 
                 // Highlight Tease
                 setTeaseIndex(idxTease);
-                await new Promise(resolve => setTimeout(resolve, SLOT_CONFIG.TEASE_PAUSE * 1000)); // Dừng theo cấu hình
+                await new Promise(resolve => setTimeout(resolve, SLOT_CONFIG.TEASE_PAUSE * 1000)); 
 
-                // BƯỚC 2: Bỏ Highlight & Trượt tiếp đến Winner thật (Sử dụng biến WINNER_MOVE)
+                // BƯỚC 2: Bỏ Highlight & Trượt tiếp đến Winner thật 
                 setTeaseIndex(null);
                 await controls.start({
                     y: winnerY,
@@ -122,8 +151,7 @@ const Reel: React.FC<ReelProps> = ({
                     }
                 });
                 
-                // BƯỚC 3: Hiệu ứng Bounce (Nảy) tại đích (Sử dụng biến BOUNCE)
-                // Chia nhỏ thời gian Bounce làm 2 giai đoạn (xuống và lên)
+                // BƯỚC 3: Hiệu ứng Bounce (Nảy) tại đích 
                 const halfBounce = SLOT_CONFIG.BOUNCE / 2;
                 await controls.start({
                     y: winnerY + 20, 
@@ -141,6 +169,8 @@ const Reel: React.FC<ReelProps> = ({
             
             // CASE 2: TRẠNG THÁI QUAY (SPINNING)
             else if (isSpinning) {
+                lastWinnerIdRef.current = null;
+                landingListRef.current = []; // Reset landing list
                 setTeaseIndex(null);
                 setIsFinished(false);
                 
@@ -150,7 +180,7 @@ const Reel: React.FC<ReelProps> = ({
                 await controls.start({
                     y: [0, -15 * ITEM_HEIGHT],
                     transition: {
-                        duration: SLOT_CONFIG.SPIN_SPEED, // Sử dụng biến
+                        duration: SLOT_CONFIG.SPIN_SPEED, 
                         ease: "linear",
                         repeat: Infinity
                     }
@@ -159,6 +189,8 @@ const Reel: React.FC<ReelProps> = ({
 
             // CASE 3: TRẠNG THÁI CHỜ (IDLE) 
             else if (!winner && !isSpinning && candidates.length > 5) {
+                lastWinnerIdRef.current = null;
+                landingListRef.current = []; 
                 setTeaseIndex(null);
                 setIsFinished(false);
                 
