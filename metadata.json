@@ -2,5 +2,5 @@
   "name": "Quay Số May Mắn",
   "description": "Hệ thống quay số may mắn tự động, trực quan với hiệu ứng đẹp mắt, âm thanh sống động và phân tích AI.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

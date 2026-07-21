@@ -3,9 +3,16 @@ import { GoogleGenAI } from "@google/genai";
 import { Employee } from "../types";
 
 export const generateCongratulation = async (employee: Employee, prizeName: string): Promise<string> => {
+  const defaultMessage = `Chúc mừng ${employee.name} đã may mắn trúng giải ${prizeName}! Chúc bạn gặt hái thêm nhiều thành công mới cùng công ty! 🎉`;
+  
   try {
+    const apiKey = process.env.API_KEY || "";
+    if (!apiKey) {
+      return defaultMessage;
+    }
+    
     // Fix: Use process.env.API_KEY directly in initialization as required by guidelines
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     // Using gemini-3-flash-preview for fast responses
     const model = 'gemini-3-flash-preview'; 
@@ -17,30 +24,37 @@ export const generateCongratulation = async (employee: Employee, prizeName: stri
     `;
 
     const prompt = `
-      Nhiệm vụ: Viết một lời chúc mừng trúng thưởng cực kỳ sôi động, hài hước và cá nhân hóa cho nhân viên trong buổi tiệc tất niên (Year End Party).
+      Nhiệm vụ: Viết một lời chúc mừng trúng thưởng cực kỳ sôi động, hài hước và cá nhân hóa cho nhân viên trong buổi tiệc tất niên (Year End Party) hoặc lễ bốc thăm may mắn.
       
-      Thông tin nhân viên:
+      Thông tin người trúng giải:
       ${employeeDetails}
       Giải thưởng nhận được: ${prizeName}
       
       Yêu cầu:
-      - Tận dụng thông tin về tên hoặc phòng ban để chơi chữ hoặc tạo sự thân mật (ví dụ: "IT mà trúng giải này thì code chạy phăm phăm").
+      - Nếu tên là một mã số dự thưởng hoặc một chữ số (Ví dụ: 12, 345, SBD-102), hãy chúc mừng chủ nhân của con số may mắn này bằng giọng điệu hân hoan, tràn đầy tài lộc, chúc họ một năm mới vạn sự hanh thông và phát tài phát lộc.
+      - Nếu là tên người cụ thể, hãy tận dụng thông tin về tên hoặc phòng ban để chơi chữ hoặc tạo sự thân mật (ví dụ: "IT mà trúng giải này thì code chạy phăm phăm").
       - Giọng văn: Bùng nổ, vui vẻ, thân thiện.
       - Độ dài: Tối đa 2 câu.
       - Nếu là Giải Đặc Biệt hoặc Giải Nhất, hãy nâng tầm sự hào hứng lên mức cao nhất.
       - Chỉ trả về nội dung lời chúc, không thêm bất kỳ văn bản giải thích nào.
     `;
 
-    // Fix: Call generateContent directly on ai.models
-    const response = await ai.models.generateContent({
+    // Implement a 5-second timeout for the API call
+    const apiCall = ai.models.generateContent({
       model: model,
       contents: prompt,
     });
 
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), 5000)
+    );
+
+    const response = await Promise.race([apiCall, timeoutPromise]);
+
     // Fix: Use response.text property (not a method call) as per guidelines
-    return response.text?.trim() || `Chúc mừng ${employee.name} đã trúng ${prizeName}!`;
+    return response.text?.trim() || defaultMessage;
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return `Chúc mừng ${employee.name} đã trúng ${prizeName}!`;
+    console.error("Gemini API Error or Timeout:", error);
+    return defaultMessage;
   }
 };

@@ -34,3 +34,8 @@ export interface Settings {
   demoMode: boolean; // If true, doesn't reduce prize count
   confettiEnabled: boolean;
 }
+
+export interface RiggedSetting {
+  prizeId: string;
+  employeeId: string; // The selected employee ID who is rigged to win this prize
+}

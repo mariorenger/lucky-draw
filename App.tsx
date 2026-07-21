@@ -7,9 +7,9 @@ import {
   Settings, X, Music, Upload, Trash2, AlertTriangle, Info, Database, 
   BarChart3, PieChart, CheckCircle2, FileJson, Headphones, Speaker, 
   PlayCircle, StopCircle, RefreshCw, Sparkles, Image as ImageIcon,
-  UserCheck, Edit3, Minus, Plus, Clock
+  UserCheck, Edit3, Minus, Plus, Clock, Lock, Unlock, Key, ShieldAlert
 } from 'lucide-react';
-import { AppState, Employee, Prize, Winner, Settings as AppSettings } from './types';
+import { AppState, Employee, Prize, Winner, Settings as AppSettings, RiggedSetting } from './types';
 import { SOUNDS, DEFAULT_FALLING_ICONS, SLOT_CONFIG } from './constants';
 import * as ExcelService from './services/excelService';
 import * as GeminiService from './services/geminiService';
@@ -64,6 +64,22 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string>("");
   const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
+
+  // Admin secret rigging states
+  const [riggedSettings, setRiggedSettings] = useState<RiggedSetting[]>(() => {
+    const saved = localStorage.getItem('rigged_settings');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminInputCode, setAdminInputCode] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [titleClickCount, setTitleClickCount] = useState(0);
+  const [selectedPrizeForRigging, setSelectedPrizeForRigging] = useState<Prize | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('rigged_settings', JSON.stringify(riggedSettings));
+  }, [riggedSettings]);
 
   // Sounds refs
   const spinSound = useRef<Howl | null>(null);
@@ -168,11 +184,56 @@ const App: React.FC = () => {
     const selectedWinners: Employee[] = [];
     const tempEligible = [...eligible];
     
+    // Find rigged configurations for this specific prize
+    const prizeRigged = riggedSettings.filter(rs => rs.prizeId === currentPrize.id);
+    
+    // Check which of these rigged employees are still eligible (haven't won anything yet)
+    const eligibleRiggedEmployees = prizeRigged
+      .map(rs => tempEligible.find(emp => emp.id === rs.employeeId))
+      .filter((emp): emp is Employee => !!emp);
+
     for(let i = 0; i < spinCount; i++) {
        if (tempEligible.length === 0) break;
-       const randomIndex = Math.floor(Math.random() * tempEligible.length);
-       selectedWinners.push(tempEligible[randomIndex]);
-       tempEligible.splice(randomIndex, 1);
+       
+       // Priority 1: Pick from eligible rigged employees
+       if (eligibleRiggedEmployees.length > 0) {
+         const riggedEmp = eligibleRiggedEmployees.shift()!;
+         selectedWinners.push(riggedEmp);
+         
+         // Remove from tempEligible so we don't pick them again
+         const indexInTemp = tempEligible.findIndex(e => e.id === riggedEmp.id);
+         if (indexInTemp !== -1) {
+           tempEligible.splice(indexInTemp, 1);
+         }
+       } else {
+         // Priority 2: Pick completely randomly but EXCLUDE employees rigged for other active/uncompleted prizes
+         const randomPool = tempEligible.filter(emp => {
+           // Find if this employee is rigged for other prizes
+           const otherRigged = riggedSettings.filter(rs => rs.employeeId === emp.id && rs.prizeId !== currentPrize.id);
+           if (otherRigged.length === 0) return true;
+           
+           // Check if any of those other prizes still have remaining quantity to be drawn
+           const hasActiveRiggedPrize = otherRigged.some(rs => {
+             const targetPrize = prizes.find(p => p.id === rs.prizeId);
+             return targetPrize && targetPrize.quantity > 0;
+           });
+           
+           // If yes, exclude them from this random draw so they don't lose their chance at the high-tier prize
+           return !hasActiveRiggedPrize;
+         });
+
+         // Fallback if everyone is locked (unlikely), use the entire remaining tempEligible
+         const activePool = randomPool.length > 0 ? randomPool : tempEligible;
+         const randomIndex = Math.floor(Math.random() * activePool.length);
+         const selectedEmp = activePool[randomIndex];
+         selectedWinners.push(selectedEmp);
+         
+         // Remove from tempEligible so we don't pick them again
+         const indexInTemp = tempEligible.findIndex(e => e.id === selectedEmp.id);
+         if (indexInTemp !== -1) {
+           tempEligible.splice(indexInTemp, 1);
+         }
+       }
     }
 
     const newWinnersData: Winner[] = [];
@@ -369,6 +430,39 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTitleClick = () => {
+    setTitleClickCount(prev => {
+      const next = prev + 1;
+      if (next >= 5) {
+        setShowAdminLogin(true);
+        setAdminInputCode('');
+        setAdminError('');
+        playSound('click');
+        return 0;
+      }
+      return next;
+    });
+  };
+
+  const handleAdminClick = () => {
+    setShowAdminLogin(true);
+    setAdminInputCode('');
+    setAdminError('');
+    playSound('click');
+  };
+
+  const handleAdminLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminInputCode === 'admin' || adminInputCode === 'cocau123') {
+      setShowAdminLogin(false);
+      setShowAdminPanel(true);
+      setAdminError('');
+      playSound('click');
+    } else {
+      setAdminError('Mã khóa không chính xác! Vui lòng thử lại.');
+    }
+  };
+
   const renderAudioCardLocal = (title: string, type: keyof typeof customSounds, description: string) => (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col justify-between group hover:border-brand-yellow/30 transition-all">
         <div className="flex justify-between items-start mb-1">
@@ -387,7 +481,7 @@ const App: React.FC = () => {
     <div className="relative z-10 max-w-6xl mx-auto w-full animate-fade-in space-y-10 mt-6 pb-20 px-4">
       {/* Keeping setup UI exactly as before */}
       <div className="text-center space-y-4">
-        <h1 className="text-5xl md:text-8xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow drop-shadow-lg tracking-tight uppercase">
+        <h1 onClick={handleTitleClick} className="select-none cursor-pointer text-5xl md:text-8xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow drop-shadow-lg tracking-tight uppercase">
           QUAY SỐ MAY MẮN
         </h1>
         <p className="text-teal-200 text-lg md:text-xl font-light tracking-[0.3em] uppercase opacity-80">Hệ thống quay số trúng thưởng tự động</p>
@@ -427,9 +521,12 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      <div className="flex justify-center">
+      <div className="flex justify-center gap-4">
           <button onClick={() => setShowDataManager(true)} className="px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl hover:bg-white/20 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
               <Database className="w-5 h-5 text-brand-yellow" /> Quản lý / Chỉnh sửa Dữ liệu
+          </button>
+          <button onClick={handleAdminClick} className="px-6 py-3 bg-brand-emerald/40 text-brand-yellow border border-brand-yellow/30 rounded-xl hover:bg-brand-emerald hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
+              <Lock className="w-5 h-5 text-brand-yellow" /> Cơ cấu Giải ngầm
           </button>
       </div>
 
@@ -494,6 +591,7 @@ const App: React.FC = () => {
                 <PieChart className="w-5 h-5" /> Chọn hạng mục Giải thưởng
               </h3>
               <div className="flex items-center gap-3">
+                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Cơ cấu giải ngầm"><Lock className="w-5 h-5" /></button>
                   <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Quản lý dữ liệu"><Edit3 className="w-5 h-5" /></button>
                   {/* REMOVED SETTINGS BUTTON HERE */}
                   <button 
@@ -729,6 +827,240 @@ const App: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Login Modal */}
+      {showAdminLogin && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+          <div className="bg-brand-emeraldDark border-2 border-brand-yellow/30 p-8 rounded-[32px] w-full max-w-md shadow-2xl relative">
+            <button onClick={() => setShowAdminLogin(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+              <X className="w-6 h-6" />
+            </button>
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="bg-brand-yellow/10 p-4 rounded-full text-brand-yellow">
+                <Lock className="w-10 h-10" />
+              </div>
+              <h2 className="text-2xl font-black text-white uppercase tracking-wider">Xác thực Admin</h2>
+              <p className="text-teal-100/70 text-sm">Vui lòng nhập mã khóa xác thực để cấu hình cơ cấu giải ngầm.</p>
+              
+              <form onSubmit={handleAdminLoginSubmit} className="w-full mt-4 space-y-4">
+                <input 
+                  type="password" 
+                  placeholder="Nhập mã khóa..." 
+                  value={adminInputCode}
+                  onChange={(e) => setAdminInputCode(e.target.value)}
+                  className="w-full p-4 bg-black/40 border border-brand-yellow/20 rounded-xl text-center text-white focus:outline-none focus:border-brand-yellow font-mono text-lg"
+                  autoFocus
+                />
+                {adminError && <p className="text-red-400 text-xs font-bold">{adminError}</p>}
+                
+                <button type="submit" className="w-full py-4 bg-brand-yellow text-brand-emeraldDark font-black rounded-xl uppercase tracking-widest text-sm transition hover:scale-105 active:scale-95 shadow-lg">
+                  Xác nhận
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Rigged Panel Modal */}
+      {showAdminPanel && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+          <div className="bg-brand-emeraldDark border-2 border-brand-yellow/30 rounded-[32px] w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[85vh] overflow-hidden">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
+              <div className="flex items-center gap-3">
+                <ShieldAlert className="w-6 h-6 text-brand-yellow animate-pulse" />
+                <div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider">CƠ CẤU GIẢI NGẦM (CHỈ ADMIN)</h2>
+                  <p className="text-[10px] text-teal-200/70 uppercase font-mono tracking-widest">Hệ thống gán người trúng giải trước khi quay</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowAdminPanel(false);
+                  setSelectedPrizeForRigging(null);
+                }} 
+                className="p-2 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              
+              {/* Note / Alert */}
+              <div className="p-4 bg-brand-yellow/10 border border-brand-yellow/20 rounded-2xl flex items-start gap-3">
+                <Info className="w-5 h-5 text-brand-yellow shrink-0 mt-0.5" />
+                <div className="text-xs text-teal-100 leading-relaxed space-y-1">
+                  <p className="font-bold text-brand-yellow">💡 Hướng dẫn vận hành:</p>
+                  <p>1. Chọn giải thưởng bạn muốn gán trước người chiến thắng (ví dụ: Giải Nhất, Giải Đặc biệt).</p>
+                  <p>2. Chọn mã nhân viên / SBD của người muốn trúng giải từ danh sách.</p>
+                  <p>3. Khi thực hiện quay số cho giải này, hệ thống sẽ ưu tiên chọn người bạn đã cài đặt trước.</p>
+                  <p>4. Nếu quay nhiều người cùng lúc mà số lượng gán ít hơn số quay, các vị trí còn lại sẽ được chọn ngẫu nhiên hoàn toàn.</p>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-5 gap-6">
+                {/* Prize selector list */}
+                <div className="md:col-span-2 border-r border-white/10 pr-4 overflow-y-auto space-y-2 max-h-[40vh] custom-scrollbar">
+                  <h3 className="text-xs font-black text-brand-yellow uppercase tracking-wider mb-3">Danh sách giải thưởng</h3>
+                  {prizes.map(p => {
+                    const riggedForThisPrize = riggedSettings.filter(rs => rs.prizeId === p.id);
+                    return (
+                      <button 
+                        key={p.id}
+                        onClick={() => setSelectedPrizeForRigging(p)}
+                        className={`w-full p-4 rounded-xl text-left border transition-all flex justify-between items-center ${selectedPrizeForRigging?.id === p.id ? 'bg-brand-yellow/10 border-brand-yellow text-white' : 'bg-black/20 border-white/5 text-gray-300 hover:bg-white/5'}`}
+                      >
+                        <div className="truncate pr-2">
+                          <p className="font-bold text-sm truncate">{p.name}</p>
+                          <p className="text-[10px] text-gray-400">Số lượng: {p.quantity}/{p.originalQuantity}</p>
+                        </div>
+                        {riggedForThisPrize.length > 0 && (
+                          <span className="px-2 py-1 bg-brand-yellow text-brand-emeraldDark text-[10px] font-black rounded-full shrink-0">
+                            Cơ cấu: {riggedForThisPrize.length}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Prize settings detail */}
+                <div className="md:col-span-3 overflow-y-auto pl-2 flex flex-col justify-between max-h-[40vh] custom-scrollbar">
+                  {selectedPrizeForRigging ? (
+                    <div className="space-y-4 flex flex-col h-full justify-between">
+                      <div>
+                        <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3">
+                          <h3 className="font-black text-sm text-white uppercase">{selectedPrizeForRigging.name}</h3>
+                          <span className="text-xs text-gray-400">Đã gán: {riggedSettings.filter(rs => rs.prizeId === selectedPrizeForRigging.id).length} người</span>
+                        </div>
+
+                        {/* List of rigged employees */}
+                        <div className="space-y-2 max-h-[22vh] overflow-y-auto custom-scrollbar pr-1">
+                          {riggedSettings.filter(rs => rs.prizeId === selectedPrizeForRigging.id).length === 0 ? (
+                            <div className="text-center py-6 border border-dashed border-white/10 rounded-xl text-xs text-gray-500">
+                              Chưa cài đặt cơ cấu giải này. Sẽ quay hoàn toàn ngẫu nhiên.
+                            </div>
+                          ) : (
+                            riggedSettings.filter(rs => rs.prizeId === selectedPrizeForRigging.id).map(rs => {
+                              const emp = employees.find(e => e.id === rs.employeeId);
+                              const hasWon = winners.find(w => w.employee.id === rs.employeeId);
+                              return (
+                                <div key={rs.employeeId} className="flex items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl text-xs">
+                                  <div className="truncate">
+                                    <p className="font-bold text-white truncate">{emp ? emp.name : 'Không rõ (Đã bị xóa)'}</p>
+                                    <p className="text-[10px] text-gray-400 font-mono truncate">{emp ? `${emp.email} ${emp.department ? `• ${emp.department}` : ''}` : rs.employeeId}</p>
+                                    {hasWon ? (
+                                      <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5 block">Đã trúng: {hasWon.prize.name} (Hết hiệu lực)</span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold text-green-400 uppercase tracking-widest mt-0.5 block">Sẵn sàng trúng giải</span>
+                                    )}
+                                  </div>
+                                  <button 
+                                    onClick={() => {
+                                      setRiggedSettings(prev => prev.filter(item => !(item.prizeId === selectedPrizeForRigging.id && item.employeeId === rs.employeeId)));
+                                      playSound('click');
+                                    }}
+                                    className="p-1 hover:bg-red-500/10 text-gray-400 hover:text-red-400 rounded transition shrink-0"
+                                    title="Xóa cài đặt"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Add new rigged configuration */}
+                      <div className="border-t border-white/10 pt-4 mt-auto">
+                        <label className="block text-xs font-bold text-brand-yellow uppercase tracking-wider mb-2">Thêm người trúng giải ngầm</label>
+                        {employees.length === 0 ? (
+                          <p className="text-xs text-red-400">Vui lòng nạp danh sách Cán bộ trước.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            <select 
+                              onChange={(e) => {
+                                const empId = e.target.value;
+                                if (!empId) return;
+                                
+                                // Check if already rigged for this prize
+                                const alreadyRigged = riggedSettings.some(rs => rs.prizeId === selectedPrizeForRigging.id && rs.employeeId === empId);
+                                if (alreadyRigged) {
+                                  showAlert("Cảnh báo", "Người này đã được cài đặt cho giải này rồi.");
+                                  e.target.value = "";
+                                  return;
+                                }
+                                
+                                setRiggedSettings(prev => [...prev, { prizeId: selectedPrizeForRigging.id, employeeId: empId }]);
+                                playSound('click');
+                                e.target.value = "";
+                              }}
+                              className="w-full p-3 bg-black/50 border border-brand-yellow/30 rounded-xl text-xs text-white focus:outline-none focus:border-brand-yellow"
+                            >
+                              <option value="">-- Chọn Cán bộ / SBD từ danh sách --</option>
+                              {employees
+                                .filter(emp => !riggedSettings.some(rs => rs.prizeId === selectedPrizeForRigging.id && rs.employeeId === emp.id))
+                                .map(emp => {
+                                  const alreadyWon = winners.some(w => w.employee.id === emp.id);
+                                  return (
+                                    <option key={emp.id} value={emp.id} disabled={alreadyWon}>
+                                      {emp.name} {emp.department ? `(${emp.department})` : ''} {emp.email ? ` - ${emp.email}` : ''} {alreadyWon ? ' [ĐÃ TRÚNG GIẢI]' : ''}
+                                    </option>
+                                  );
+                                })}
+                            </select>
+                            <p className="text-[10px] text-gray-400 italic">Chọn nhân sự để gán quyền trúng giải thưởng khi hạng mục này được thực hiện.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 py-12">
+                      <ShieldAlert className="w-12 h-12 mb-3 text-white/20 animate-pulse" />
+                      <p className="text-sm">Vui lòng chọn giải thưởng bên trái để quản lý cơ cấu giải ngầm.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-white/10 flex justify-between items-center bg-black/20 shrink-0">
+              <button 
+                onClick={() => {
+                  showConfirm(
+                    "Xóa toàn bộ cơ cấu?",
+                    "Hành động này sẽ xóa sạch các cấu hình giải ngầm hiện tại. Bạn có chắc muốn thực hiện?",
+                    () => {
+                      setRiggedSettings([]);
+                      showAlert("Thành công", "Đã xóa toàn bộ cơ cấu giải ngầm.");
+                    }
+                  )
+                }}
+                className="px-4 py-2 bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white rounded-xl text-xs font-bold uppercase transition"
+              >
+                Xóa toàn bộ cài đặt
+              </button>
+              <button 
+                onClick={() => {
+                  setShowAdminPanel(false);
+                  setSelectedPrizeForRigging(null);
+                }} 
+                className="px-6 py-2 bg-brand-yellow text-brand-emeraldDark font-bold rounded-xl text-xs uppercase tracking-wider transition hover:scale-105 active:scale-95"
+              >
+                Hoàn tất
+              </button>
+            </div>
+
           </div>
         </div>
       )}
