@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, useAnimation } from 'framer-motion';
 import { Employee } from '../types';
@@ -9,10 +8,9 @@ interface SlotMachineProps {
   isSpinning: boolean;
   winners: Employee[];
   spinCount: number;
+  spinDuration: number;
 }
 
-// Chiều cao ô chữ
-const ITEM_HEIGHT = 220; 
 // Số ô hiển thị (Luôn là số lẻ để có tâm điểm)
 const VISIBLE_ITEMS = 3; 
 
@@ -32,6 +30,8 @@ interface ReelProps {
     winner: Employee | null;
     index: number;
     totalReels: number;
+    spinDuration: number;
+    itemHeight: number;
 }
 
 // Component: Cột Quay (Reel)
@@ -40,167 +40,170 @@ const Reel: React.FC<ReelProps> = ({
     isSpinning, 
     winner, 
     index,
-    totalReels 
+    totalReels,
+    spinDuration,
+    itemHeight
 }) => {
     const controls = useAnimation();
     const [displayList, setDisplayList] = useState<Employee[]>([]);
-    
-    // State highlight người "Mừng hụt"
     const [teaseIndex, setTeaseIndex] = useState<number | null>(null);
-    // State xác nhận đã dừng hẳn tại Winner thật
     const [isFinished, setIsFinished] = useState(false);
     
-    // Ref để theo dõi winner đã được animate chưa -> Tránh chạy lại Animation
-    const lastWinnerIdRef = useRef<string | null>(null);
-    
-    // Ref quan trọng: Lưu trữ danh sách "Hạ cánh" (Landing List). 
-    // Khi đã dừng tại winner, ta phải KHÓA danh sách này lại, không cho phép shuffle thay đổi nó nữa.
-    const landingListRef = useRef<Employee[]>([]);
-
-    // Effect 1: Quản lý dữ liệu hiển thị cơ bản
+    // Sử dụng Ref để tránh stale closure khi candidates thay đổi
+    const candidatesRef = useRef(candidates);
     useEffect(() => {
-        if (candidates.length === 0) return;
-        
-        // LOGIC KHÓA DỮ LIỆU:
-        // Nếu đang có winner (dù là đang chạy animation hay đang freeze),
-        // Hoặc đang quay (spinning)
-        // -> TUYỆT ĐỐI KHÔNG trộn lại danh sách từ candidates gốc.
-        // Chỉ trộn khi máy đang ở trạng thái nghỉ (Idle) và chưa có kết quả.
-        if (winner || isSpinning || lastWinnerIdRef.current) return;
+        candidatesRef.current = candidates;
+    }, [candidates]);
 
-        setDisplayList(shuffle(candidates).slice(0, 30));
-    }, [candidates, winner, isSpinning]);
+    // Sử dụng Ref để lưu winner.id hiện tại nhằm tránh trigger lại nếu trùng lặp
+    const activeWinnerIdRef = useRef<string | null>(null);
 
-    // Effect 2: Quản lý Animation
     useEffect(() => {
+        let isCancelled = false;
+
         const runAnimation = async () => {
-            // CASE 1: TRẠNG THÁI DỪNG & CÓ KẾT QUẢ (WINNER)
-            if (winner) {
-                // Nếu đây là winner cũ (đã/đang hiển thị), không chạy lại logic tính toán
-                if (lastWinnerIdRef.current === winner.id) {
-                     // Đảm bảo displayList vẫn là danh sách landing đã lưu, tránh bị reset
-                     if (landingListRef.current.length > 0) {
-                         setDisplayList(landingListRef.current);
-                     }
-                     return;
-                }
+            const currentCandidates = candidatesRef.current;
+            if (currentCandidates.length === 0) return;
+
+            // CASE 1: ĐANG QUAY VÀ CÓ WINNER (TIẾN TRÌNH QUAY & DỪNG MƯỢT MÀ)
+            if (isSpinning && winner) {
+                if (activeWinnerIdRef.current === winner.id) return;
+                activeWinnerIdRef.current = winner.id;
                 
-                lastWinnerIdRef.current = winner.id;
                 controls.stop();
                 setTeaseIndex(null);
                 setIsFinished(false);
+
+                // Tạo danh sách hiển thị dài để tạo hiệu ứng quay tốc độ cao mượt mà
+                const spinItemsCount = Math.max(30, Math.floor(12 * spinDuration));
+                const spinItems = Array.from({ length: spinItemsCount }).map(() => 
+                    currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
+                );
                 
-                // --- CẤU TRÚC DANH SÁCH DỪNG ---
-                const stopDelay = index * SLOT_CONFIG.REEL_DELAY; 
+                // Chọn một candidate làm tease (mừng hụt)
+                const eligibleTease = currentCandidates.filter(c => c.id !== winner.id);
+                const teaseUser = eligibleTease.length > 0 
+                    ? eligibleTease[Math.floor(Math.random() * eligibleTease.length)]
+                    : currentCandidates[Math.floor(Math.random() * currentCandidates.length)];
                 
-                // 1. Buffer đầu
-                const bufferCount = 12;
-                const bufferList = Array.from({ length: bufferCount }).map(() => 
-                    candidates[Math.floor(Math.random() * candidates.length)]
+                const gapCount = 5;
+                const gapItems = Array.from({ length: gapCount }).map(() => 
+                    currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
+                );
+                
+                const tailItems = Array.from({ length: 3 }).map(() => 
+                    currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
                 );
 
-                // 2. Người "Mừng hụt" (Tease)
-                const teaseUser = candidates[Math.floor(Math.random() * candidates.length)];
+                const landingList = [...spinItems, teaseUser, ...gapItems, winner, ...tailItems];
                 
-                // 3. Khoảng cách (Gap) từ Tease đến Winner
-                const gapCount = 6; 
-                const gapList = Array.from({ length: gapCount }).map(() => 
-                    candidates[Math.floor(Math.random() * candidates.length)]
-                );
-                
-                // 4. Các ô đệm cuối cùng
-                const tailList = Array.from({ length: 3 }).map(() => 
-                    candidates[Math.floor(Math.random() * candidates.length)]
-                );
-
-                // Tạo danh sách hạ cánh và KHÓA nó vào Ref
-                const landingList = [...bufferList, teaseUser, ...gapList, winner, ...tailList];
-                landingListRef.current = landingList; 
+                if (isCancelled) return;
                 setDisplayList(landingList);
 
-                // Reset vị trí về 0 
+                // Khởi tạo y từ 0
                 await controls.set({ y: 0 });
 
-                // Tính toán tọa độ Y
-                const idxTease = bufferList.length; 
-                const idxWinner = landingList.indexOf(winner);
+                const idxTease = spinItemsCount;
+                const idxWinner = spinItemsCount + 1 + gapCount;
 
-                const teaseY = -((idxTease - 1) * ITEM_HEIGHT);
-                const winnerY = -((idxWinner - 1) * ITEM_HEIGHT);
+                const teaseY = -((idxTease - 1) * itemHeight);
+                const winnerY = -((idxWinner - 1) * itemHeight);
 
-                // BƯỚC 1: Giảm tốc và dừng tại Tease User 
+                // Giai đoạn 1: Quay liên tục ở tốc độ cao
+                const firstPartIndex = Math.floor(spinItemsCount * 0.7);
+                const firstPartY = -((firstPartIndex - 1) * itemHeight);
+                
                 await controls.start({
-                    y: teaseY,
+                    y: firstPartY,
                     transition: {
-                        duration: SLOT_CONFIG.DECEL_DURATION + stopDelay, 
-                        ease: [0.1, 0.9, 0.2, 1] 
+                        duration: spinDuration * 0.7,
+                        ease: "linear"
                     }
                 });
 
-                // Highlight Tease
-                setTeaseIndex(idxTease);
-                await new Promise(resolve => setTimeout(resolve, SLOT_CONFIG.TEASE_PAUSE * 1000)); 
+                if (isCancelled) return;
 
-                // BƯỚC 2: Bỏ Highlight & Trượt tiếp đến Winner thật 
+                // Giai đoạn 2: Giảm tốc mượt mà về vị trí Tease (Mừng hụt)
+                const stopDelay = index * SLOT_CONFIG.REEL_DELAY;
+                await controls.start({
+                    y: teaseY,
+                    transition: {
+                        duration: (spinDuration * 0.3) + stopDelay,
+                        ease: [0.1, 0.9, 0.2, 1] // Bézier giảm tốc tuyệt đẹp
+                    }
+                });
+
+                if (isCancelled) return;
+
+                // Highlight ô Mừng hụt
+                setTeaseIndex(idxTease);
+                await new Promise(resolve => setTimeout(resolve, SLOT_CONFIG.TEASE_PAUSE * 1000));
+
+                if (isCancelled) return;
+
+                // Giai đoạn 3: Trượt mượt mà sang Winner thật
                 setTeaseIndex(null);
                 await controls.start({
                     y: winnerY,
                     transition: {
-                        duration: SLOT_CONFIG.WINNER_MOVE, 
+                        duration: SLOT_CONFIG.WINNER_MOVE,
                         ease: "easeInOut"
                     }
                 });
-                
-                // BƯỚC 3: Hiệu ứng Bounce (Nảy) tại đích 
+
+                if (isCancelled) return;
+
+                // Giai đoạn 4: Hiệu ứng nảy (Bounce)
                 const halfBounce = SLOT_CONFIG.BOUNCE / 2;
                 await controls.start({
-                    y: winnerY + 20, 
+                    y: winnerY + 15, // nhún xuống
                     transition: { duration: halfBounce }
                 });
                 await controls.start({
-                    y: winnerY, 
-                    transition: { duration: halfBounce, type: "spring", stiffness: 200, damping: 10 }
+                    y: winnerY, // nảy lại
+                    transition: { duration: halfBounce, type: "spring", stiffness: 220, damping: 12 }
                 });
 
-                // KẾT THÚC: Đánh dấu đã xong để bật sáng Winner
+                if (isCancelled) return;
                 setIsFinished(true);
-                return; 
             }
-            
-            // CASE 2: TRẠNG THÁI QUAY (SPINNING)
-            else if (isSpinning) {
-                lastWinnerIdRef.current = null;
-                landingListRef.current = []; // Reset landing list
+
+            // CASE 2: ĐANG QUAY NHƯNG CHƯA CÓ WINNER (FALLBACK)
+            else if (isSpinning && !winner) {
+                activeWinnerIdRef.current = null;
                 setTeaseIndex(null);
                 setIsFinished(false);
                 
-                const loopBase = shuffle(candidates).slice(0, 15);
+                const loopBase = shuffle(currentCandidates).slice(0, 15);
                 setDisplayList([...loopBase, ...loopBase, ...loopBase]);
                 
+                if (isCancelled) return;
+                await controls.set({ y: 0 });
                 await controls.start({
-                    y: [0, -15 * ITEM_HEIGHT],
+                    y: [0, -15 * itemHeight],
                     transition: {
-                        duration: SLOT_CONFIG.SPIN_SPEED, 
+                        duration: SLOT_CONFIG.SPIN_SPEED,
                         ease: "linear",
                         repeat: Infinity
                     }
                 });
-            } 
+            }
 
-            // CASE 3: TRẠNG THÁI CHỜ (IDLE) 
-            else if (!winner && !isSpinning && candidates.length > 5) {
-                lastWinnerIdRef.current = null;
-                landingListRef.current = []; 
+            // CASE 3: TRẠNG THÁI CHỜ THƯ GIÃN (IDLE)
+            else {
+                activeWinnerIdRef.current = null;
                 setTeaseIndex(null);
                 setIsFinished(false);
-                
-                const loopBase = shuffle(candidates).slice(0, 15);
+
+                const loopBase = shuffle(currentCandidates).slice(0, 15);
                 setDisplayList([...loopBase, ...loopBase, ...loopBase]);
                 
+                if (isCancelled) return;
+                await controls.set({ y: 0 });
                 await controls.start({
-                    y: [0, -15 * ITEM_HEIGHT],
+                    y: [0, -15 * itemHeight],
                     transition: {
-                        duration: 40 + (index * 5),
+                        duration: 35 + (index * 8),
                         ease: "linear",
                         repeat: Infinity
                     }
@@ -209,7 +212,12 @@ const Reel: React.FC<ReelProps> = ({
         };
 
         runAnimation();
-    }, [isSpinning, winner, candidates, controls, index]);
+
+        return () => {
+            isCancelled = true;
+            controls.stop();
+        };
+    }, [isSpinning, winner?.id, spinDuration, itemHeight, index]);
 
     return (
         <div className="relative h-full overflow-hidden bg-[#002e2c] border-r border-brand-yellow/20 last:border-r-0">
@@ -225,13 +233,13 @@ const Reel: React.FC<ReelProps> = ({
                         <div 
                             key={`${emp.id}-${i}`} 
                             className={`w-full flex flex-col items-center justify-center relative px-2 transition-all duration-500 border-b border-white/5
-                                ${isTease ? 'bg-white/10' : ''}
+                                ${isTease ? 'bg-white/10 animate-pulse' : ''}
                                 ${isRealWinner ? 'bg-brand-yellow/20' : ''}
                             `}
-                            style={{ height: ITEM_HEIGHT }}
+                            style={{ height: itemHeight }}
                         >
                             <span className={`font-display font-black text-center leading-tight break-words w-full px-4 transition-all duration-500
-                                ${totalReels === 1 ? 'text-7xl md:text-8xl' : totalReels <= 3 ? 'text-5xl md:text-6xl' : 'text-3xl md:text-4xl'}
+                                ${totalReels === 1 ? 'text-4xl md:text-6xl' : totalReels <= 3 ? 'text-2xl md:text-4xl' : totalReels <= 5 ? 'text-xl md:text-2xl' : 'text-base md:text-lg'}
                                 
                                 ${isRealWinner 
                                     ? 'text-[#FFC62F] scale-110 drop-shadow-[0_0_30px_rgba(255,198,47,1)] z-10' 
@@ -242,8 +250,8 @@ const Reel: React.FC<ReelProps> = ({
                                 {emp.name}
                             </span>
                             
-                            <span className={`mt-3 font-mono text-teal-200 uppercase tracking-widest truncate max-w-full font-bold transition-all duration-500
-                                ${totalReels === 1 ? 'text-2xl' : 'text-base'}
+                            <span className={`mt-2 font-mono text-teal-200 uppercase tracking-widest truncate max-w-full font-bold transition-all duration-500
+                                ${totalReels === 1 ? 'text-lg' : totalReels <= 3 ? 'text-xs md:text-sm' : 'text-[10px] md:text-xs'}
                                 ${isRealWinner ? 'text-[#FFC62F] opacity-100' : 'opacity-40'}
                             `}>
                                 {emp.department || emp.email.split('@')[0]}
@@ -256,7 +264,13 @@ const Reel: React.FC<ReelProps> = ({
     );
 };
 
-const SlotMachine: React.FC<SlotMachineProps> = ({ candidates, isSpinning, winners, spinCount }) => {
+const SlotMachine: React.FC<SlotMachineProps> = ({ 
+    candidates, 
+    isSpinning, 
+    winners, 
+    spinCount,
+    spinDuration
+}) => {
   const [leverState, setLeverState] = useState<'idle' | 'pulled'>('idle');
 
   useEffect(() => {
@@ -266,23 +280,32 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ candidates, isSpinning, winne
     }
   }, [isSpinning]);
 
+  const getItemHeight = () => {
+      if (spinCount === 1) return 160;
+      if (spinCount <= 3) return 130;
+      if (spinCount <= 5) return 110;
+      return 90;
+  };
+  
+  const itemHeight = getItemHeight();
+
   const getMachineWidth = () => {
-      if (spinCount === 1) return 'max-w-3xl';
-      if (spinCount === 2) return 'max-w-5xl';
-      if (spinCount === 3) return 'max-w-7xl';
-      return 'max-w-[90vw]';
+      if (spinCount === 1) return 'max-w-xl md:max-w-2xl';
+      if (spinCount === 2) return 'max-w-2xl md:max-w-4xl';
+      if (spinCount === 3) return 'max-w-3xl md:max-w-6xl';
+      return 'max-w-[95vw]';
   };
 
   return (
-    <div className="relative w-full flex justify-center items-center py-10 perspective-[1000px]">
+    <div className="relative w-full flex justify-center items-center py-6 perspective-[1000px]">
        
        <div className={`relative ${getMachineWidth()} w-full transition-all duration-500`}>
             
-            <div className="relative z-10 bg-[#004d4b] rounded-[40px] p-6 md:p-10 border-[10px] border-[#FFC62F] shadow-[0_30px_60px_rgba(0,0,0,0.8),inset_0_0_80px_rgba(0,0,0,0.6)]">
+            <div className="relative z-10 bg-[#004d4b] rounded-[40px] p-4 md:p-8 border-[8px] border-[#FFC62F] shadow-[0_20px_50px_rgba(0,0,0,0.7),inset_0_0_60px_rgba(0,0,0,0.6)]">
                 
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-6 z-20 bg-[#002e2c] px-6 py-2 rounded-full border border-[#FFC62F]">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-4 z-20 bg-[#002e2c] px-4 py-1.5 rounded-full border border-[#FFC62F]">
                     {Array.from({length: 3}).map((_, i) => (
-                        <div key={i} className={`w-4 h-4 rounded-full border-2 border-[#FFC62F] ${isSpinning ? 'bg-red-500 animate-pulse' : 'bg-red-800'}`} />
+                        <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-[#FFC62F] ${isSpinning ? 'bg-red-500 animate-pulse' : 'bg-red-800'}`} />
                     ))}
                 </div>
 
@@ -290,7 +313,7 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ candidates, isSpinning, winne
                     <div 
                         className="grid w-full"
                         style={{ 
-                            height: ITEM_HEIGHT * VISIBLE_ITEMS, 
+                            height: itemHeight * VISIBLE_ITEMS, 
                             gridTemplateColumns: `repeat(${spinCount}, minmax(0, 1fr))` 
                         }}
                     >
@@ -302,39 +325,41 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ candidates, isSpinning, winne
                                 isSpinning={isSpinning}
                                 winner={winners.length > i ? winners[i] : null}
                                 totalReels={spinCount}
+                                spinDuration={spinDuration}
+                                itemHeight={itemHeight}
                             />
                         ))}
                     </div>
 
-                    <div className="absolute inset-0 pointer-events-none z-20 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.9)_0%,transparent_30%,transparent_70%,rgba(0,0,0,0.9)_100%)]" />
+                    <div className="absolute inset-0 pointer-events-none z-20 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.95)_0%,transparent_25%,transparent_75%,rgba(0,0,0,0.95)_100%)]" />
 
                     <div 
                         className="absolute top-1/2 left-0 right-0 -translate-y-1/2 z-10 pointer-events-none"
-                        style={{ height: ITEM_HEIGHT }} 
+                        style={{ height: itemHeight }} 
                     >   
-                        <div className="absolute inset-0 border-y-[4px] border-[#FFC62F]/50 shadow-[0_0_20px_rgba(255,198,47,0.2)]"></div>
-                        <div className="absolute -left-4 top-1/2 -translate-y-1/2 text-[#FFC62F] drop-shadow-lg text-5xl">►</div>
-                        <div className="absolute -right-4 top-1/2 -translate-y-1/2 text-[#FFC62F] drop-shadow-lg text-5xl">◄</div>
+                        <div className="absolute inset-0 border-y-[4px] border-[#FFC62F]/50 shadow-[0_0_20px_rgba(255,198,47,0.3)]"></div>
+                        <div className="absolute -left-4 top-1/2 -translate-y-1/2 text-[#FFC62F] drop-shadow-lg text-4xl">►</div>
+                        <div className="absolute -right-4 top-1/2 -translate-y-1/2 text-[#FFC62F] drop-shadow-lg text-4xl">◄</div>
                     </div>
                 </div>
 
-                <div className="mt-6 flex justify-center opacity-50">
-                    <div className="h-2 w-1/3 bg-black/40 rounded-full"></div>
+                <div className="mt-4 flex justify-center opacity-40">
+                    <div className="h-1.5 w-1/4 bg-black/40 rounded-full"></div>
                 </div>
             </div>
 
-            <div className="absolute top-1/2 -right-16 md:-right-24 -translate-y-1/2 w-[80px] h-[250px] z-0 hidden md:block">
-                <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[40px] h-[80px] bg-[#b45309] rounded-r-xl border-y-[3px] border-r-[3px] border-[#78350f] shadow-xl"></div>
-                <div className="absolute top-1/2 left-[20px] -translate-y-1/2 w-[30px] h-[30px] bg-gray-400 rounded-full z-10 border-4 border-gray-600 shadow-md"></div>
+            <div className="absolute top-1/2 -right-16 md:-right-20 -translate-y-1/2 w-[70px] h-[220px] z-0 hidden md:block">
+                <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[35px] h-[70px] bg-[#b45309] rounded-r-xl border-y-[2.5px] border-r-[2.5px] border-[#78350f] shadow-lg"></div>
+                <div className="absolute top-1/2 left-[15px] -translate-y-1/2 w-[24px] h-[24px] bg-gray-400 rounded-full z-10 border-4 border-gray-600 shadow-sm"></div>
                 <motion.div
-                    className="absolute top-1/2 left-[35px] w-[18px] h-[180px] origin-[50%_100%] z-0"
-                    style={{ marginTop: '-180px' }} 
+                    className="absolute top-1/2 left-[27px] w-[14px] h-[150px] origin-[50%_100%] z-0"
+                    style={{ marginTop: '-150px' }} 
                     initial={{ rotate: 0 }}
                     animate={{ rotate: leverState === 'pulled' ? 160 : 0 }}
                     transition={{ type: "spring", stiffness: 150, damping: 12 }}
                 >
-                    <div className="w-full h-full bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 rounded-t-full shadow-lg border border-gray-400"></div>
-                    <div className="absolute -top-8 -left-[26px] w-[70px] h-[70px] rounded-full bg-[radial-gradient(circle_at_35%_35%,_#ff4d4d,_#cc0000)] shadow-[0_5px_10px_rgba(0,0,0,0.4),inset_0_-5px_10px_rgba(0,0,0,0.3)] border-2 border-[#990000]"></div>
+                    <div className="w-full h-full bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 rounded-t-full shadow-md border border-gray-400"></div>
+                    <div className="absolute -top-7 -left-[21px] w-[56px] h-[56px] rounded-full bg-[radial-gradient(circle_at_35%_35%,_#ff4d4d,_#cc0000)] shadow-[0_4px_8px_rgba(0,0,0,0.4),inset_0_-4px_8px_rgba(0,0,0,0.3)] border-2 border-[#990000]"></div>
                 </motion.div>
             </div>
        </div>

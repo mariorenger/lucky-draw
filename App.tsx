@@ -38,8 +38,7 @@ const App: React.FC = () => {
   
   // Changed from single winner to batch winners array
   const [batchWinners, setBatchWinners] = useState<Employee[]>([]); 
-  
-  // New States for Multi-Spin
+  const [pendingWinners, setPendingWinners] = useState<Winner[]>([]);
   const [spinCount, setSpinCount] = useState<number>(1);
   const [spinDuration, setSpinDuration] = useState<number>(10); // Seconds
 
@@ -165,88 +164,66 @@ const App: React.FC = () => {
     if (currentPrize.quantity < spinCount && !settings.demoMode) return showAlert("Không đủ giải", `Chỉ còn ${currentPrize.quantity} giải, không đủ để quay ${spinCount} người.`);
     if (eligible.length < spinCount) return showAlert("Không đủ người", `Chỉ còn ${eligible.length} người chưa trúng, không đủ để quay ${spinCount} giải.`);
 
-    setAppState(AppState.SPINNING);
-    // Khi bắt đầu quay, xóa batchWinners cũ để SlotMachine biết là đang quay
-    setBatchWinners([]);
+    // 1. SELECT WINNERS INSTANTLY
+    const selectedWinners: Employee[] = [];
+    const tempEligible = [...eligible];
     
+    for(let i = 0; i < spinCount; i++) {
+       if (tempEligible.length === 0) break;
+       const randomIndex = Math.floor(Math.random() * tempEligible.length);
+       selectedWinners.push(tempEligible[randomIndex]);
+       tempEligible.splice(randomIndex, 1);
+    }
+
+    const newWinnersData: Winner[] = [];
+    const newBatchIds: string[] = [];
+
+    selectedWinners.forEach(w => {
+        const winId = Date.now().toString() + Math.random().toString().substr(2, 5);
+        newBatchIds.push(winId);
+        newWinnersData.push({
+           id: winId,
+           employee: w,
+           prize: { ...currentPrize, quantity: currentPrize.quantity - spinCount }, 
+           timestamp: new Date().toISOString(),
+           aiMessage: "" 
+        });
+    });
+
+    // 2. SET STATES INSTANTLY
+    setAppState(AppState.SPINNING);
+    setBatchWinners(selectedWinners); // Pass winners to SlotMachine immediately!
+    setPendingWinners(newWinnersData);
+    setLastBatchIds(newBatchIds);
+
     bgMusic.current?.fade(0.1, 0, 500);
     playSound('spin');
 
-    // STEP 1: GIAI ĐOẠN QUAY (Spinning) - Sử dụng biến spinDuration do user setting
-    
-    setTimeout(() => {
-      // HẾT THỜI GIAN SPIN -> BẮT ĐẦU QUY TRÌNH DỪNG
-      
-      const selectedWinners: Employee[] = [];
-      const tempEligible = [...eligible];
-      
-      for(let i = 0; i < spinCount; i++) {
-         if (tempEligible.length === 0) break;
-         const randomIndex = Math.floor(Math.random() * tempEligible.length);
-         selectedWinners.push(tempEligible[randomIndex]);
-         tempEligible.splice(randomIndex, 1);
-      }
-
-      const newWinnersData: Winner[] = [];
-      const newBatchIds: string[] = [];
-
-      selectedWinners.forEach(w => {
-          const winId = Date.now().toString() + Math.random().toString().substr(2, 5);
-          newBatchIds.push(winId);
-          newWinnersData.push({
-             id: winId,
-             employee: w,
-             prize: { ...currentPrize, quantity: currentPrize.quantity - spinCount }, 
-             timestamp: new Date().toISOString(),
-             aiMessage: "" 
+    // AI Generation starts immediately in background
+    setAiLoading(true);
+    if (selectedWinners.length === 1) {
+        GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name)
+          .then(msg => {
+              setAiMessage(msg);
+              setAiLoading(false);
+              setPendingWinners(prev => prev.map(w => w.id === newBatchIds[0] ? { ...w, aiMessage: msg } : w));
           });
-      });
+    } else {
+        setAiMessage(`Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!`);
+        setAiLoading(false);
+    }
 
-      // Truyền danh sách Winner vào SlotMachine -> SlotMachine bắt đầu Animation Dừng
-      setBatchWinners(selectedWinners);
-      setLastBatchIds(newBatchIds);
+    // Tính toán thời gian chờ để hiện Modal chúc mừng trùng khớp hoàn hảo với chuyển động của SlotMachine
+    const maxReelDelay = (spinCount - 1) * SLOT_CONFIG.REEL_DELAY;
+    const stoppingDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
+    const totalWaitTime = (spinDuration + stoppingDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000;
 
-      // AI Generation starts immediately in background
-      setAiLoading(true);
-      if (selectedWinners.length === 1) {
-          GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name)
-            .then(msg => {
-                setAiMessage(msg);
-                setAiLoading(false);
-                setWinners(prev => prev.map(w => w.id === newBatchIds[0] ? { ...w, aiMessage: msg } : w));
-            });
-      } else {
-          setAiMessage(`Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!`);
-          setAiLoading(false);
-      }
-
-      if (!settings.demoMode) {
-        setPrizes(prev => prev.map(p => p.id === currentPrize.id ? { ...p, quantity: Math.max(0, p.quantity - selectedWinners.length) } : p));
-        const updatedPrize = { ...currentPrize, quantity: Math.max(0, currentPrize.quantity - selectedWinners.length) };
-        setCurrentPrize(updatedPrize);
-        setWinners(prev => [...newWinnersData, ...prev]);
-      }
-
-      // STEP 2: TÍNH TOÁN THỜI GIAN CHỜ CHÍNH XÁC
-      
-      // Thời gian delay của cột quay cuối cùng (Nếu quay 3 người thì cột 3 dừng trễ hơn cột 1)
-      const maxReelDelay = (spinCount - 1) * SLOT_CONFIG.REEL_DELAY; 
-      
-      // Tổng thời gian Animation dừng (SlotMachine)
-      // = Delay cột cuối + Giảm tốc + Mừng hụt + Trượt Winner + Nảy
-      const stoppingAnimationDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
-      
-      // Tổng thời gian chờ = Animation dừng + Thời gian Highlight vàng (Freeze) + SAFETY BUFFER (Để tránh lag)
-      const totalWaitTime = (stoppingAnimationDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000; // Đổi sang ms
-
-      setTimeout(() => {
-          stopSound('spin');
-          playSound('win');
-          setAppState(AppState.WINNER); // -> Hiện Modal
-          triggerFireworks();
-      }, totalWaitTime); 
-
-    }, spinDuration * 1000); // <-- Thời gian quay (Spinning)
+    setTimeout(() => {
+        stopSound('spin');
+        playSound('win');
+        setAppState(AppState.WINNER); // -> Hiện Modal
+        triggerFireworks();
+    }, totalWaitTime);
   };
 
   const triggerFireworks = () => {
@@ -323,6 +300,50 @@ const App: React.FC = () => {
     playSound('click');
   };
 
+  const confirmBatchWinners = () => {
+    if (pendingWinners.length === 0) return;
+
+    // 1. Thêm chính thức vào winners
+    setWinners(prev => [...pendingWinners, ...prev]);
+
+    // 2. Trừ giải thưởng chính thức (nếu không ở demoMode)
+    if (!settings.demoMode && currentPrize) {
+      setPrizes(prev => {
+        const updated = prev.map(p => p.id === currentPrize.id ? { ...p, quantity: Math.max(0, p.quantity - pendingWinners.length) } : p);
+        const samplePrize = updated.find(p => p.id === currentPrize.id);
+        if (samplePrize) setCurrentPrize(samplePrize);
+        return updated;
+      });
+    }
+
+    // 3. Reset các trạng thái và quay về READY
+    setBatchWinners([]);
+    setPendingWinners([]);
+    setLastBatchIds([]);
+    setAiMessage("");
+    setAppState(AppState.READY);
+    if (settings.bgMusicEnabled) bgMusic.current?.fade(0, 0.25, 500);
+    playSound('click');
+  };
+
+  const handleCancelSpin = () => {
+    showConfirm(
+      "Hủy kết quả lượt này?", 
+      "Lượt quay số vừa rồi sẽ bị hủy bỏ hoàn toàn và không lưu vào danh sách trúng giải.", 
+      () => {
+        setBatchWinners([]);
+        setPendingWinners([]);
+        setLastBatchIds([]);
+        setAiMessage("");
+        setAppState(AppState.READY);
+        if (settings.bgMusicEnabled) bgMusic.current?.fade(0, 0.25, 500);
+        playSound('click');
+      },
+      "Hủy kết quả",
+      "Quay lại"
+    );
+  };
+
   const handleDataUpdate = (type: 'employees' | 'prizes', data: any[]) => {
     if (type === 'employees') {
         setEmployees(data);
@@ -367,9 +388,9 @@ const App: React.FC = () => {
       {/* Keeping setup UI exactly as before */}
       <div className="text-center space-y-4">
         <h1 className="text-5xl md:text-8xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow drop-shadow-lg tracking-tight uppercase">
-          D&A YEP 2025
+          QUAY SỐ MAY MẮN
         </h1>
-        <p className="text-teal-200 text-lg md:text-xl font-light tracking-[0.3em] uppercase opacity-80">Trung tâm Dữ liệu và Phân tích - BIDV</p>
+        <p className="text-teal-200 text-lg md:text-xl font-light tracking-[0.3em] uppercase opacity-80">Hệ thống quay số trúng thưởng tự động</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-8">
@@ -465,7 +486,7 @@ const App: React.FC = () => {
     const eligibleCount = employees.length - winners.length;
 
     return (
-      <div className="w-full max-w-7xl mx-auto flex flex-col gap-8 pb-20 relative z-10">
+      <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 pb-12 relative z-10">
         <div className="glass-panel p-6 rounded-3xl border-brand-yellow/30 shadow-2xl">
           <div className="flex flex-col gap-6">
             <div className="flex justify-between items-center">
@@ -494,16 +515,18 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {prizes.map(p => (
-                <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-5 rounded-2xl border-2 transition-all text-left ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10' : 'border-white/5 bg-white/5'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
-                  <p className="font-bold text-sm leading-tight text-white mb-2">{p.name}</p>
-                  <span className="text-xs font-mono text-teal-100 bg-black/20 px-2 py-0.5 rounded">Còn: {p.quantity}</span>
+                <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
+                  <p className="font-bold text-xs md:text-sm leading-tight text-white line-clamp-2 mb-2">{p.name}</p>
+                  <div>
+                    <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">Còn: {p.quantity}</span>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="relative py-12">
+        <div className="relative py-6">
           {/* Candidates Counter Badge */}
           <div className="absolute top-0 right-0 z-20 -mt-2">
              <div className="bg-black/40 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
@@ -517,8 +540,9 @@ const App: React.FC = () => {
           <SlotMachine 
             candidates={employees.filter(e => !winners.find(w => w.employee.id === e.id))} 
             isSpinning={appState === AppState.SPINNING} 
-            winners={appState === AppState.WINNER || (appState === AppState.SPINNING && batchWinners.length > 0) ? batchWinners : []} // Pass batchWinners during spin logic phase too to allow stopping
+            winners={batchWinners} 
             spinCount={spinCount}
+            spinDuration={spinDuration}
           />
           
           {appState === AppState.READY && (
@@ -651,8 +675,8 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="pt-4 flex flex-col md:flex-row justify-center gap-3 shrink-0">
-                    <button onClick={handleBatchReroll} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">HỦY / QUAY LẠI</button>
-                    <button onClick={resetForNext} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">XÁC NHẬN / TIẾP TỤC</button>
+                    <button onClick={handleCancelSpin} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">HỦY / QUAY LẠI</button>
+                    <button onClick={confirmBatchWinners} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">XÁC NHẬN / TIẾP TỤC</button>
                 </div>
               </div>
             </div>
@@ -663,7 +687,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-12 font-sans overflow-x-hidden relative">
+    <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-6 lg:p-8 font-sans overflow-x-hidden relative">
       {settings.fallingIconsEnabled && <FallingIcons icons={fallingIcons} />}
       {appState === AppState.SETUP ? renderSetup() : renderGame()}
       
