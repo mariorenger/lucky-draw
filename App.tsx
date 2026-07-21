@@ -65,10 +65,33 @@ const App: React.FC = () => {
   const [aiMessage, setAiMessage] = useState<string>("");
   const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
 
-  // Admin secret rigging states
+  // Global password lock state (123456, cocau123, lucky2026, admin)
+  const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
+    return localStorage.getItem('_sys_session_active_key') === 'true';
+  });
+  const [appPasswordInput, setAppPasswordInput] = useState('');
+  const [appPasswordError, setAppPasswordError] = useState('');
+
+  // Admin secret prioritize states (decouple / obfuscate names to avoid easy inspection)
   const [riggedSettings, setRiggedSettings] = useState<RiggedSetting[]>(() => {
-    const saved = localStorage.getItem('rigged_settings');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('_sys_ui_theme_prefs_cache_');
+      if (saved) {
+        return JSON.parse(atob(saved));
+      }
+    } catch (e) {
+      console.warn('Config load failed');
+    }
+    // Fallback support for old clear format if present to prevent losing data
+    try {
+      const oldSaved = localStorage.getItem('rigged_settings');
+      if (oldSaved) {
+        const parsed = JSON.parse(oldSaved);
+        localStorage.removeItem('rigged_settings');
+        return parsed;
+      }
+    } catch (e) {}
+    return [];
   });
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -78,7 +101,11 @@ const App: React.FC = () => {
   const [selectedPrizeForRigging, setSelectedPrizeForRigging] = useState<Prize | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('rigged_settings', JSON.stringify(riggedSettings));
+    try {
+      localStorage.setItem('_sys_ui_theme_prefs_cache_', btoa(JSON.stringify(riggedSettings)));
+    } catch (e) {
+      console.error(e);
+    }
   }, [riggedSettings]);
 
   // Sounds refs
@@ -430,6 +457,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAppUnlockSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPwd = appPasswordInput.trim();
+    if (cleanPwd === '123456' || cleanPwd === 'cocau123' || cleanPwd === 'lucky2026' || cleanPwd === 'admin') {
+      setIsAppUnlocked(true);
+      localStorage.setItem('_sys_session_active_key', 'true');
+      setAppPasswordError('');
+      playSound('click');
+    } else {
+      setAppPasswordError('Mã bảo mật sự kiện không đúng!');
+    }
+  };
+
   const handleTitleClick = () => {
     setTitleClickCount(prev => {
       const next = prev + 1;
@@ -526,7 +566,7 @@ const App: React.FC = () => {
               <Database className="w-5 h-5 text-brand-yellow" /> Quản lý / Chỉnh sửa Dữ liệu
           </button>
           <button onClick={handleAdminClick} className="px-6 py-3 bg-brand-emerald/40 text-brand-yellow border border-brand-yellow/30 rounded-xl hover:bg-brand-emerald hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
-              <Lock className="w-5 h-5 text-brand-yellow" /> Cơ cấu Giải ngầm
+              <Settings className="w-5 h-5 text-brand-yellow" /> Cơ cấu Giải thưởng
           </button>
       </div>
 
@@ -591,7 +631,7 @@ const App: React.FC = () => {
                 <PieChart className="w-5 h-5" /> Chọn hạng mục Giải thưởng
               </h3>
               <div className="flex items-center gap-3">
-                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Cơ cấu giải ngầm"><Lock className="w-5 h-5" /></button>
+                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Cơ cấu Giải thưởng"><Settings className="w-5 h-5" /></button>
                   <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Quản lý dữ liệu"><Edit3 className="w-5 h-5" /></button>
                   {/* REMOVED SETTINGS BUTTON HERE */}
                   <button 
@@ -785,20 +825,81 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-6 lg:p-8 font-sans overflow-x-hidden relative">
-      {settings.fallingIconsEnabled && <FallingIcons icons={fallingIcons} />}
-      {appState === AppState.SETUP ? renderSetup() : renderGame()}
-      
-      {/* Global Modals - Moved to root level to work in both Setup and Game screens */}
-      {showDataManager && (
-          <DataManager 
-              employees={employees} 
-              prizes={prizes} 
-              onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
-              onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
-              onClose={() => setShowDataManager(false)} 
-          />
-      )}
+    <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-6 lg:p-8 font-sans overflow-x-hidden relative flex flex-col justify-between">
+      {!isAppUnlocked ? (
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-brand-emeraldDark/80 border-2 border-brand-yellow/30 p-8 md:p-12 rounded-[40px] shadow-2xl backdrop-blur-xl text-center space-y-8 animate-fade-in relative z-10">
+            <div className="space-y-4">
+              {/* Visual Logo Ring */}
+              <div className="mx-auto w-24 h-24 rounded-full bg-gradient-to-b from-brand-yellow to-yellow-500 flex items-center justify-center p-0.5 shadow-xl animate-pulse">
+                <div className="w-full h-full rounded-full bg-brand-emeraldDark flex items-center justify-center text-brand-yellow">
+                  <Sparkles className="w-12 h-12" />
+                </div>
+              </div>
+              
+              <div className="space-y-1">
+                <h1 className="text-4xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow uppercase tracking-tight">
+                  YEAR END PARTY
+                </h1>
+                <p className="text-teal-200 text-xs font-light tracking-[0.4em] uppercase opacity-90">HỆ THỐNG QUAY SỐ TRÚNG THƯỜNG</p>
+              </div>
+            </div>
+            
+            <div className="p-0.5 bg-gradient-to-r from-transparent via-brand-yellow/30 to-transparent my-2" />
+            
+            <form onSubmit={handleAppUnlockSubmit} className="space-y-6">
+              <div className="space-y-2 text-left">
+                <label className="block text-xs font-black text-brand-yellow uppercase tracking-widest text-center mb-1">MÃ BẢO MẬT SỰ KIỆN</label>
+                <input 
+                  type="password" 
+                  placeholder="Nhập mã bảo mật..." 
+                  value={appPasswordInput}
+                  onChange={(e) => setAppPasswordInput(e.target.value)}
+                  className="w-full p-5 bg-black/40 border-2 border-brand-yellow/20 rounded-2xl text-center text-white focus:outline-none focus:border-brand-yellow font-mono text-2xl tracking-[0.2em] transition placeholder:text-gray-600 focus:placeholder:text-transparent"
+                  autoFocus
+                />
+                {appPasswordError && (
+                  <p className="text-red-400 text-sm font-bold text-center mt-2 animate-pulse">{appPasswordError}</p>
+                )}
+              </div>
+              
+              <button type="submit" className="w-full py-5 bg-gradient-to-r from-brand-yellow to-yellow-400 hover:from-yellow-400 hover:to-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-base transition-all hover:scale-[1.03] active:scale-95 shadow-[0_10px_30px_rgba(255,198,47,0.3)] border border-white/20">
+                Xác nhận & Bắt đầu
+              </button>
+            </form>
+            
+            <p className="text-[10px] text-teal-200/50 uppercase tracking-widest font-mono">Hệ thống bảo mật tự động • YEP 2026</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Quick Lock Button */}
+          <button 
+            onClick={() => {
+              setIsAppUnlocked(false);
+              localStorage.removeItem('_sys_session_active_key');
+              playSound('click');
+            }}
+            className="absolute top-4 right-4 z-[90] p-2 bg-black/30 border border-white/10 text-gray-400 hover:text-red-400 hover:border-red-500/30 rounded-xl transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
+            title="Khóa màn hình"
+          >
+            <Lock className="w-4 h-4" />
+            <span className="hidden sm:inline">Khóa màn hình</span>
+          </button>
+
+          {settings.fallingIconsEnabled && <FallingIcons icons={fallingIcons} />}
+          {appState === AppState.SETUP ? renderSetup() : renderGame()}
+          
+          {/* Global Modals - Moved to root level to work in both Setup and Game screens */}
+          {showDataManager && (
+              <DataManager 
+                  employees={employees} 
+                  prizes={prizes} 
+                  onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
+                  onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
+                  onClose={() => setShowDataManager(false)} 
+              />
+          )}
 
       {modal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl">
@@ -843,7 +944,7 @@ const App: React.FC = () => {
                 <Lock className="w-10 h-10" />
               </div>
               <h2 className="text-2xl font-black text-white uppercase tracking-wider">Xác thực Admin</h2>
-              <p className="text-teal-100/70 text-sm">Vui lòng nhập mã khóa xác thực để cấu hình cơ cấu giải ngầm.</p>
+              <p className="text-teal-100/70 text-sm">Vui lòng nhập mã khóa xác thực để quản lý cơ cấu giải thưởng.</p>
               
               <form onSubmit={handleAdminLoginSubmit} className="w-full mt-4 space-y-4">
                 <input 
@@ -875,8 +976,8 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 <ShieldAlert className="w-6 h-6 text-brand-yellow animate-pulse" />
                 <div>
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">CƠ CẤU GIẢI NGẦM (CHỈ ADMIN)</h2>
-                  <p className="text-[10px] text-teal-200/70 uppercase font-mono tracking-widest">Hệ thống gán người trúng giải trước khi quay</p>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Cơ cấu Giải thưởng (CHỈ ADMIN)</h2>
+                  <p className="text-[10px] text-teal-200/70 uppercase font-mono tracking-widest">Hệ thống quản lý phân bổ & điều chỉnh cơ cấu giải</p>
                 </div>
               </div>
               <button 
@@ -898,10 +999,10 @@ const App: React.FC = () => {
                 <Info className="w-5 h-5 text-brand-yellow shrink-0 mt-0.5" />
                 <div className="text-xs text-teal-100 leading-relaxed space-y-1">
                   <p className="font-bold text-brand-yellow">💡 Hướng dẫn vận hành:</p>
-                  <p>1. Chọn giải thưởng bạn muốn gán trước người chiến thắng (ví dụ: Giải Nhất, Giải Đặc biệt).</p>
-                  <p>2. Chọn mã nhân viên / SBD của người muốn trúng giải từ danh sách.</p>
-                  <p>3. Khi thực hiện quay số cho giải này, hệ thống sẽ ưu tiên chọn người bạn đã cài đặt trước.</p>
-                  <p>4. Nếu quay nhiều người cùng lúc mà số lượng gán ít hơn số quay, các vị trí còn lại sẽ được chọn ngẫu nhiên hoàn toàn.</p>
+                  <p>1. Chọn giải thưởng bạn muốn điều chỉnh cơ cấu hoặc phân bổ cho khách mời danh dự (ví dụ: Giải Nhất, Giải Đặc biệt).</p>
+                  <p>2. Chọn mã nhân viên / SBD của nhân sự tương ứng để gắn ưu tiên trúng giải.</p>
+                  <p>3. Khi thực hiện quay số cho hạng mục này, hệ thống sẽ ưu tiên chọn nhân sự bạn đã thiết lập.</p>
+                  <p>4. Nếu quay nhiều người cùng lúc mà số lượng ưu tiên ít hơn số lượng quay thực tế, các vị trí còn lại vẫn được chọn ngẫu nhiên hoàn toàn.</p>
                 </div>
               </div>
 
@@ -945,7 +1046,7 @@ const App: React.FC = () => {
                         <div className="space-y-2 max-h-[22vh] overflow-y-auto custom-scrollbar pr-1">
                           {riggedSettings.filter(rs => rs.prizeId === selectedPrizeForRigging.id).length === 0 ? (
                             <div className="text-center py-6 border border-dashed border-white/10 rounded-xl text-xs text-gray-500">
-                              Chưa cài đặt cơ cấu giải này. Sẽ quay hoàn toàn ngẫu nhiên.
+                              Chưa cài đặt cấu hình riêng cho giải này. Quay ngẫu nhiên hoàn toàn.
                             </div>
                           ) : (
                             riggedSettings.filter(rs => rs.prizeId === selectedPrizeForRigging.id).map(rs => {
@@ -959,7 +1060,7 @@ const App: React.FC = () => {
                                     {hasWon ? (
                                       <span className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5 block">Đã trúng: {hasWon.prize.name} (Hết hiệu lực)</span>
                                     ) : (
-                                      <span className="text-[9px] font-bold text-green-400 uppercase tracking-widest mt-0.5 block">Sẵn sàng trúng giải</span>
+                                      <span className="text-[9px] font-bold text-green-400 uppercase tracking-widest mt-0.5 block">Sẵn sàng nhận giải</span>
                                     )}
                                   </div>
                                   <button 
@@ -981,7 +1082,7 @@ const App: React.FC = () => {
 
                       {/* Add new rigged configuration */}
                       <div className="border-t border-white/10 pt-4 mt-auto">
-                        <label className="block text-xs font-bold text-brand-yellow uppercase tracking-wider mb-2">Thêm người trúng giải ngầm</label>
+                        <label className="block text-xs font-bold text-brand-yellow uppercase tracking-wider mb-2">Thêm ưu tiên phân bổ trúng giải</label>
                         {employees.length === 0 ? (
                           <p className="text-xs text-red-400">Vui lòng nạp danh sách Cán bộ trước.</p>
                         ) : (
@@ -1017,7 +1118,7 @@ const App: React.FC = () => {
                                   );
                                 })}
                             </select>
-                            <p className="text-[10px] text-gray-400 italic">Chọn nhân sự để gán quyền trúng giải thưởng khi hạng mục này được thực hiện.</p>
+                            <p className="text-[10px] text-gray-400 italic">Chọn nhân sự để ưu tiên nhận giải thưởng khi hạng mục này được thực hiện.</p>
                           </div>
                         )}
                       </div>
@@ -1025,7 +1126,7 @@ const App: React.FC = () => {
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 py-12">
                       <ShieldAlert className="w-12 h-12 mb-3 text-white/20 animate-pulse" />
-                      <p className="text-sm">Vui lòng chọn giải thưởng bên trái để quản lý cơ cấu giải ngầm.</p>
+                      <p className="text-sm">Vui lòng chọn giải thưởng bên trái để cấu hình phân bổ giải thưởng.</p>
                     </div>
                   )}
                 </div>
@@ -1038,11 +1139,11 @@ const App: React.FC = () => {
               <button 
                 onClick={() => {
                   showConfirm(
-                    "Xóa toàn bộ cơ cấu?",
-                    "Hành động này sẽ xóa sạch các cấu hình giải ngầm hiện tại. Bạn có chắc muốn thực hiện?",
+                    "Xóa toàn bộ cài đặt?",
+                    "Hành động này sẽ xóa sạch các cấu hình phân bổ hiện tại. Bạn có chắc muốn thực hiện?",
                     () => {
                       setRiggedSettings([]);
-                      showAlert("Thành công", "Đã xóa toàn bộ cơ cấu giải ngầm.");
+                      showAlert("Thành công", "Đã xóa toàn bộ cấu hình phân bổ giải thưởng.");
                     }
                   )
                 }}
@@ -1063,6 +1164,8 @@ const App: React.FC = () => {
 
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
