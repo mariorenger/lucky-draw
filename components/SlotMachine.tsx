@@ -47,6 +47,7 @@ const Reel: React.FC<ReelProps> = ({
     const controls = useAnimation();
     const [displayList, setDisplayList] = useState<Employee[]>([]);
     const [teaseIndex, setTeaseIndex] = useState<number | null>(null);
+    const [winnerIndex, setWinnerIndex] = useState<number | null>(null);
     const [isFinished, setIsFinished] = useState(false);
     
     // Sử dụng Ref để tránh stale closure khi candidates thay đổi
@@ -72,10 +73,11 @@ const Reel: React.FC<ReelProps> = ({
                 
                 controls.stop();
                 setTeaseIndex(null);
+                setWinnerIndex(null);
                 setIsFinished(false);
 
-                // Tạo danh sách hiển thị dài để tạo hiệu ứng quay tốc độ cao mượt mà
-                const spinItemsCount = Math.max(30, Math.floor(12 * spinDuration));
+                // Tạo danh sách hiển thị với số lượng tối ưu để quay tốc độ vừa phải, dễ nhìn rõ tên
+                const spinItemsCount = Math.max(25, Math.floor(6 * spinDuration));
                 const spinItems = Array.from({ length: spinItemsCount }).map(() => 
                     currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
                 );
@@ -87,13 +89,17 @@ const Reel: React.FC<ReelProps> = ({
                     : currentCandidates[Math.floor(Math.random() * currentCandidates.length)];
                 
                 const gapCount = 5;
-                const gapItems = Array.from({ length: gapCount }).map(() => 
-                    currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
-                );
+                const gapItems = Array.from({ length: gapCount }).map(() => {
+                    const pool = currentCandidates.filter(c => c.id !== winner.id);
+                    const selectedPool = pool.length > 0 ? pool : currentCandidates;
+                    return selectedPool[Math.floor(Math.random() * selectedPool.length)];
+                });
                 
-                const tailItems = Array.from({ length: 3 }).map(() => 
-                    currentCandidates[Math.floor(Math.random() * currentCandidates.length)]
-                );
+                const tailItems = Array.from({ length: 3 }).map(() => {
+                    const pool = currentCandidates.filter(c => c.id !== winner.id);
+                    const selectedPool = pool.length > 0 ? pool : currentCandidates;
+                    return selectedPool[Math.floor(Math.random() * selectedPool.length)];
+                });
 
                 const landingList = [...spinItems, teaseUser, ...gapItems, winner, ...tailItems];
                 
@@ -105,6 +111,7 @@ const Reel: React.FC<ReelProps> = ({
 
                 const idxTease = spinItemsCount;
                 const idxWinner = spinItemsCount + 1 + gapCount;
+                setWinnerIndex(idxWinner);
 
                 const teaseY = -((idxTease - 1) * itemHeight);
                 const winnerY = -((idxWinner - 1) * itemHeight);
@@ -172,6 +179,7 @@ const Reel: React.FC<ReelProps> = ({
             else if (isSpinning && !winner) {
                 activeWinnerIdRef.current = null;
                 setTeaseIndex(null);
+                setWinnerIndex(null);
                 setIsFinished(false);
                 
                 const loopBase = shuffle(currentCandidates).slice(0, 15);
@@ -193,6 +201,7 @@ const Reel: React.FC<ReelProps> = ({
             else {
                 activeWinnerIdRef.current = null;
                 setTeaseIndex(null);
+                setWinnerIndex(null);
                 setIsFinished(false);
 
                 const loopBase = shuffle(currentCandidates).slice(0, 15);
@@ -227,7 +236,7 @@ const Reel: React.FC<ReelProps> = ({
             >
                 {displayList.map((emp, i) => {
                     const isTease = i === teaseIndex;
-                    const isRealWinner = isFinished && emp.id === winner?.id;
+                    const isRealWinner = isFinished && i === winnerIndex;
                     
                     return (
                         <div 

@@ -1,4 +1,4 @@
-
+// 
 export const EXCEL_TEMPLATE_EMPLOYEE = [
   { "Tên": "Nguyễn Insight", "Email": "insight.n@bidv.com.vn", "Phòng ban": "Phân tích KH" },
   { "Tên": "Trần BigData", "Email": "data.t@bidv.com.vn", "Phòng ban": "Kỹ thuật Dữ liệu" },
@@ -31,11 +31,11 @@ export const SLOT_CONFIG = {
 // Nếu không thấy ảnh, hãy sử dụng tính năng "Nạp file" trong giao diện Cấu hình (Settings).
 export const DEFAULT_FALLING_ICONS = [
   "https://www.saokim.com.vn/wp-content/uploads/2023/01/Bieu-Tuong-Logo-Ngan-Hang-BIDV.png", // Icon BIDV / Hoa mai
-  "https://png.pngtree.com/png-clipart/20230531/original/pngtree-illustration-of-snowflakes-png-image_9174384.png",
-  "https://marketplace.canva.com/hfAso/MAF40jhfAso/1/tl/canva-red-tet-lantern.-vietnamese-new-year-MAF40jhfAso.png",
-  "https://www.saokim.com.vn/wp-content/uploads/2023/01/Bieu-Tuong-Logo-Ngan-Hang-BIDV.png",
-  "https://img.pikbest.com/origin/10/09/94/57YpIkbEsTi8f.png!sw800",
-  "https://cdn.pnj.io/images/detailed/70/gj0000y060001-bao-li-xi-loi-vang-24k-pnj-than-tai-02.png"
+  // "https://png.pngtree.com/png-clipart/20230531/original/pngtree-illustration-of-snowflakes-png-image_9174384.png",
+  // "https://marketplace.canva.com/hfAso/MAF40jhfAso/1/tl/canva-red-tet-lantern.-vietnamese-new-year-MAF40jhfAso.png",
+  // "https://www.saokim.com.vn/wp-content/uploads/2023/01/Bieu-Tuong-Logo-Ngan-Hang-BIDV.png",
+  // "https://img.pikbest.com/origin/10/09/94/57YpIkbEsTi8f.png!sw800",
+  // "https://cdn.pnj.io/images/detailed/70/gj0000y060001-bao-li-xi-loi-vang-24k-pnj-than-tai-02.png"
 ];
 
 export const SOUNDS = {

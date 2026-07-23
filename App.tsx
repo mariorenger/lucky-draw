@@ -7,9 +7,11 @@ import {
   Settings, X, Music, Upload, Trash2, AlertTriangle, Info, Database, 
   BarChart3, PieChart, CheckCircle2, FileJson, Headphones, Speaker, 
   PlayCircle, StopCircle, RefreshCw, Sparkles, Image as ImageIcon,
-  UserCheck, Edit3, Minus, Plus, Clock, Lock, Unlock, Key, ShieldAlert
+  UserCheck, Edit3, Minus, Plus, Clock, Lock, Unlock, Key, ShieldAlert,
+  Globe, ChevronDown
 } from 'lucide-react';
 import { AppState, Employee, Prize, Winner, Settings as AppSettings, RiggedSetting } from './types';
+import { Language, translations } from './services/languageService';
 import { SOUNDS, DEFAULT_FALLING_ICONS, SLOT_CONFIG } from './constants';
 import * as ExcelService from './services/excelService';
 import * as GeminiService from './services/geminiService';
@@ -29,28 +31,115 @@ interface ModalConfig {
 }
 
 const App: React.FC = () => {
-  // State
-  const [appState, setAppState] = useState<AppState>(AppState.SETUP);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [prizes, setPrizes] = useState<Prize[]>([]);
-  const [winners, setWinners] = useState<Winner[]>([]);
-  const [currentPrize, setCurrentPrize] = useState<Prize | null>(null);
-  
+  const [lang, setLang] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_lang_');
+      return (saved as Language) || 'mm'; // Default to Myanmar
+    } catch (e) {
+      return 'mm';
+    }
+  });
+
+  const [isLangMenuOpen, setIsLangMenuOpen] = useState<boolean>(false);
+
+  const t = translations[lang];
+
+  const handleLangChange = (newLang: Language) => {
+    setLang(newLang);
+    localStorage.setItem('_sys_yep_lang_', newLang);
+    playSound('click');
+  };
+
+  // State loaded from localStorage for resilience against page reloads/F5
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_employees_');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [prizes, setPrizes] = useState<Prize[]>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_prizes_');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [winners, setWinners] = useState<Winner[]>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_winners_');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [currentPrize, setCurrentPrize] = useState<Prize | null>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_current_prize_');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const [appState, setAppState] = useState<AppState>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_app_state_');
+      // Reset spinning/winner state to READY to avoid half-spun/stuck states
+      if (saved === AppState.SPINNING || saved === AppState.WINNER) {
+        return AppState.READY;
+      }
+      return (saved as AppState) || AppState.SETUP;
+    } catch (e) {
+      return AppState.SETUP;
+    }
+  });
+
+  const [spinCount, setSpinCount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_spin_count_');
+      return saved ? parseInt(saved, 10) : 1;
+    } catch (e) {
+      return 1;
+    }
+  });
+
+  const [spinDuration, setSpinDuration] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('_sys_yep_spin_duration_');
+      return saved ? parseInt(saved, 10) : 10;
+    } catch (e) {
+      return 10;
+    }
+  });
+
+  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean }>(() => {
+    const defaultSettings = {
+      soundEnabled: true,
+      demoMode: false,
+      confettiEnabled: true,
+      bgMusicEnabled: true,
+      fallingIconsEnabled: true,
+    };
+    try {
+      const saved = localStorage.getItem('_sys_yep_settings_');
+      return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+    } catch (e) {
+      return defaultSettings;
+    }
+  });
+
   // Changed from single winner to batch winners array
   const [batchWinners, setBatchWinners] = useState<Employee[]>([]); 
   const [pendingWinners, setPendingWinners] = useState<Winner[]>([]);
-  const [spinCount, setSpinCount] = useState<number>(1);
-  const [spinDuration, setSpinDuration] = useState<number>(10); // Seconds
 
   const [showSettings, setShowSettings] = useState(false);
   const [showDataManager, setShowDataManager] = useState(false);
-  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean }>({
-    soundEnabled: true,
-    demoMode: false,
-    confettiEnabled: true,
-    bgMusicEnabled: true,
-    fallingIconsEnabled: true,
-  });
   
   const [modal, setModal] = useState<ModalConfig>({ isOpen: false, type: 'alert', title: '', message: '' });
   const [customSounds, setCustomSounds] = useState({ 
@@ -64,8 +153,8 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string>("");
   const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
-
-  // Global password lock state (123456, cocau123, lucky2026, admin)
+ 
+  // Global password lock state (hannn2)
   const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
     return localStorage.getItem('_sys_session_active_key') === 'true';
   });
@@ -99,6 +188,71 @@ const App: React.FC = () => {
   const [adminError, setAdminError] = useState('');
   const [titleClickCount, setTitleClickCount] = useState(0);
   const [selectedPrizeForRigging, setSelectedPrizeForRigging] = useState<Prize | null>(null);
+
+  // Sync state changes back to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_employees_', JSON.stringify(employees));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [employees]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_prizes_', JSON.stringify(prizes));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [prizes]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_winners_', JSON.stringify(winners));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [winners]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_current_prize_', currentPrize ? JSON.stringify(currentPrize) : '');
+    } catch (e) {
+      console.error(e);
+    }
+  }, [currentPrize]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_app_state_', appState);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [appState]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_settings_', JSON.stringify(settings));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_spin_count_', spinCount.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  }, [spinCount]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('_sys_yep_spin_duration_', spinDuration.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  }, [spinDuration]);
 
   useEffect(() => {
     try {
@@ -290,14 +444,19 @@ const App: React.FC = () => {
     // AI Generation starts immediately in background
     setAiLoading(true);
     if (selectedWinners.length === 1) {
-        GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name)
+        GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name, lang)
           .then(msg => {
               setAiMessage(msg);
               setAiLoading(false);
               setPendingWinners(prev => prev.map(w => w.id === newBatchIds[0] ? { ...w, aiMessage: msg } : w));
           });
     } else {
-        setAiMessage(`Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!`);
+        const defaultMultiMsg = lang === 'vi' 
+          ? `Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!` 
+          : lang === 'en' 
+            ? `Congratulations to the ${selectedWinners.length} outstanding members on winning the ${currentPrize.name}!` 
+            : `${currentPrize.name} ကို ရရှိသွားသော ကံထူးရှင် ${selectedWinners.length} ဦးလုံးကို အထူးပင် ဂုဏ်ယူဝမ်းမြောက်ပါသည်!`;
+        setAiMessage(defaultMultiMsg);
         setAiLoading(false);
     }
 
@@ -432,6 +591,38 @@ const App: React.FC = () => {
     );
   };
 
+  const handleResetAll = () => {
+    showConfirm(
+      "Khôi phục cài đặt gốc?",
+      "Hành động này sẽ xóa sạch danh sách Cán bộ, Cơ cấu giải thưởng, Lịch sử trúng giải và toàn bộ các thiết lập hiện tại. Bạn có chắc chắn muốn thực hiện?",
+      () => {
+        setEmployees([]);
+        setPrizes([]);
+        setWinners([]);
+        setCurrentPrize(null);
+        setAppState(AppState.SETUP);
+        setSpinCount(1);
+        setSpinDuration(10);
+        setRiggedSettings([]);
+        
+        localStorage.removeItem('_sys_yep_employees_');
+        localStorage.removeItem('_sys_yep_prizes_');
+        localStorage.removeItem('_sys_yep_winners_');
+        localStorage.removeItem('_sys_yep_current_prize_');
+        localStorage.removeItem('_sys_yep_app_state_');
+        localStorage.removeItem('_sys_yep_settings_');
+        localStorage.removeItem('_sys_yep_spin_count_');
+        localStorage.removeItem('_sys_yep_spin_duration_');
+        localStorage.removeItem('_sys_ui_theme_prefs_cache_');
+        
+        showAlert("Thành công", "Toàn bộ hệ thống đã được thiết lập lại từ đầu.");
+        playSound('click');
+      },
+      "Đặt lại hệ thống",
+      "Hủy bỏ"
+    );
+  };
+
   const handleDataUpdate = (type: 'employees' | 'prizes', data: any[]) => {
     if (type === 'employees') {
         setEmployees(data);
@@ -460,7 +651,7 @@ const App: React.FC = () => {
   const handleAppUnlockSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPwd = appPasswordInput.trim();
-    if (cleanPwd === '123456' || cleanPwd === 'cocau123' || cleanPwd === 'lucky2026' || cleanPwd === 'admin') {
+    if (cleanPwd === 'hannn2') {
       setIsAppUnlocked(true);
       localStorage.setItem('_sys_session_active_key', 'true');
       setAppPasswordError('');
@@ -493,7 +684,7 @@ const App: React.FC = () => {
 
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminInputCode === 'admin' || adminInputCode === 'cocau123') {
+    if (adminInputCode === 'hannn2') {
       setShowAdminLogin(false);
       setShowAdminPanel(true);
       setAdminError('');
@@ -503,33 +694,37 @@ const App: React.FC = () => {
     }
   };
 
-  const renderAudioCardLocal = (title: string, type: keyof typeof customSounds, description: string) => (
-    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col justify-between group hover:border-brand-yellow/30 transition-all">
-        <div className="flex justify-between items-start mb-1">
-            <span className="text-[10px] font-black text-brand-yellow uppercase tracking-widest">{title}</span>
-            <button onClick={() => resetAudio(type)} className="text-gray-500 hover:text-red-400 p-1"><RotateCcw className="w-3 h-3" /></button>
-        </div>
-        <p className="text-[9px] text-teal-100/60 leading-tight mb-3">{description}</p>
-        <label className="flex items-center justify-center gap-2 p-2 bg-brand-emerald/20 border border-brand-emerald/40 rounded-lg cursor-pointer text-[10px] font-bold text-teal-100 hover:bg-brand-emerald/40 transition">
-            <Upload className="w-3 h-3" /> Nạp file
-            <input type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleAudioUpload(type, e.target.files[0])} />
-        </label>
-    </div>
-  );
+  const renderAudioCardLocal = (type: 'bg' | 'spin' | 'win' | 'click') => {
+    const title = type === 'bg' ? t.bgMusic : type === 'spin' ? t.spinSound : type === 'win' ? t.winSound : t.clickSound;
+    const desc = type === 'bg' ? t.bgDesc : type === 'spin' ? t.spinDesc : type === 'win' ? t.winDesc : t.clickDesc;
+    return (
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col justify-between group hover:border-brand-yellow/30 transition-all">
+          <div className="flex justify-between items-start mb-1">
+              <span className="text-[10px] font-black text-brand-yellow uppercase tracking-widest">{title}</span>
+              <button onClick={() => resetAudio(type)} className="text-gray-500 hover:text-red-400 p-1"><RotateCcw className="w-3 h-3" /></button>
+          </div>
+          <p className="text-[9px] text-teal-100/60 leading-tight mb-3">{desc}</p>
+          <label className="flex items-center justify-center gap-2 p-2 bg-brand-emerald/20 border border-brand-emerald/40 rounded-lg cursor-pointer text-[10px] font-bold text-teal-100 hover:bg-brand-emerald/40 transition">
+              <Upload className="w-3 h-3" /> {lang === 'vi' ? 'Nạp file' : lang === 'en' ? 'Upload file' : 'ဖိုင်တင်ရန်'}
+              <input type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleAudioUpload(type, e.target.files[0])} />
+          </label>
+      </div>
+    );
+  };
 
   const renderSetup = () => (
     <div className="relative z-10 max-w-6xl mx-auto w-full animate-fade-in space-y-10 mt-6 pb-20 px-4">
       {/* Keeping setup UI exactly as before */}
       <div className="text-center space-y-4">
         <h1 onClick={handleTitleClick} className="select-none cursor-pointer text-5xl md:text-8xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow drop-shadow-lg tracking-tight uppercase">
-          QUAY SỐ MAY MẮN
+          {t.appTitle}
         </h1>
-        <p className="text-teal-200 text-lg md:text-xl font-light tracking-[0.3em] uppercase opacity-80">Hệ thống quay số trúng thưởng tự động</p>
+        <p className="text-teal-200 text-lg md:text-xl font-light tracking-[0.3em] uppercase opacity-80">{t.appSubtitle}</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-8">
         <div className="space-y-4">
-            <FileUpload label="Database Cán bộ (Excel)" accept=".xlsx, .xls" onFileSelect={async (f) => {
+            <FileUpload label={t.importEmployees} accept=".xlsx, .xls" onFileSelect={async (f) => {
                 const data = await ExcelService.parseEmployees(f);
                 setEmployees(data);
                 playSound('click');
@@ -538,13 +733,13 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
                     <div className="flex items-center gap-3">
                         <CheckCircle2 className="text-green-400 w-5 h-5" />
-                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {employees.length} Cán bộ</span>
+                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">{t.employeesLoaded.replace('{n}', String(employees.length))}</span>
                     </div>
                 </div>
             )}
         </div>
         <div className="space-y-4">
-            <FileUpload label="Cấu hình Giải thưởng" accept=".xlsx, .xls" onFileSelect={async (f) => {
+            <FileUpload label={t.importPrizes} accept=".xlsx, .xls" onFileSelect={async (f) => {
                 const data = await ExcelService.parsePrizes(f);
                 setPrizes(data);
                 if (data.length > 0) setCurrentPrize(data[0]);
@@ -554,19 +749,22 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/30 rounded-2xl animate-fade-in shadow-lg">
                     <div className="flex items-center gap-3">
                         <CheckCircle2 className="text-green-400 w-5 h-5" />
-                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">Đã nạp {prizes.length} hạng mục giải</span>
+                        <span className="text-sm font-bold text-green-100 uppercase tracking-widest">{t.prizesLoaded.replace('{n}', String(prizes.length))}</span>
                     </div>
                 </div>
             )}
         </div>
       </div>
       
-      <div className="flex justify-center gap-4">
+      <div className="flex justify-center gap-4 flex-wrap">
           <button onClick={() => setShowDataManager(true)} className="px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl hover:bg-white/20 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
-              <Database className="w-5 h-5 text-brand-yellow" /> Quản lý / Chỉnh sửa Dữ liệu
+              <Database className="w-5 h-5 text-brand-yellow" /> {t.manageData}
           </button>
           <button onClick={handleAdminClick} className="px-6 py-3 bg-brand-emerald/40 text-brand-yellow border border-brand-yellow/30 rounded-xl hover:bg-brand-emerald hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
-              <Settings className="w-5 h-5 text-brand-yellow" /> Cơ cấu Giải thưởng
+              <Settings className="w-5 h-5 text-brand-yellow" /> {t.prizeStructure}
+          </button>
+          <button onClick={handleResetAll} className="px-6 py-3 bg-red-600/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-600 hover:text-white hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
+              <RotateCcw className="w-5 h-5" /> {t.resetSystem}
           </button>
       </div>
 
@@ -574,20 +772,20 @@ const App: React.FC = () => {
         <div className="lg:col-span-2 glass-panel p-8 rounded-[40px] border-brand-yellow/20 shadow-2xl space-y-8">
             <div className="flex items-center gap-3 border-b border-white/10 pb-5">
                 <Music className="w-6 h-6 text-brand-yellow" />
-                <h3 className="text-xl font-black uppercase tracking-widest text-white">Âm thanh Sự kiện</h3>
+                <h3 className="text-xl font-black uppercase tracking-widest text-white">{t.eventSounds}</h3>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {renderAudioCardLocal("Nhạc nền", "bg", "Sôi động suốt buổi tiệc.")}
-                {renderAudioCardLocal("Quay số", "spin", "Kịch tính lúc quay.")}
-                {renderAudioCardLocal("Thắng giải", "win", "Vỡ òa cảm xúc.")}
-                {renderAudioCardLocal("Nút bấm", "click", "Phản hồi tinh tế.")}
+                {renderAudioCardLocal("bg")}
+                {renderAudioCardLocal("spin")}
+                {renderAudioCardLocal("win")}
+                {renderAudioCardLocal("click")}
             </div>
         </div>
 
         <div className="glass-panel p-8 rounded-[40px] border-brand-yellow/20 shadow-2xl space-y-8">
             <div className="flex items-center gap-3 border-b border-white/10 pb-5">
                 <Sparkles className="w-6 h-6 text-brand-yellow" />
-                <h3 className="text-xl font-black uppercase tracking-widest text-white">Hiệu ứng rơi</h3>
+                <h3 className="text-xl font-black uppercase tracking-widest text-white">{t.fallingEffects}</h3>
             </div>
             <div className="space-y-6">
                 <div className="flex flex-wrap gap-3">
@@ -605,7 +803,7 @@ const App: React.FC = () => {
                     </label>
                 </div>
                 <button onClick={() => setFallingIcons(DEFAULT_FALLING_ICONS)} className="w-full text-xs text-gray-400 hover:text-white transition flex items-center justify-center gap-2">
-                  <RotateCcw className="w-3 h-3" /> Khôi phục Hoa mai & Thỏi vàng
+                  <RotateCcw className="w-3 h-3" /> {t.restoreDefaults}
                 </button>
             </div>
         </div>
@@ -613,7 +811,7 @@ const App: React.FC = () => {
 
       {employees.length > 0 && prizes.length > 0 && (
         <div className="flex justify-center pt-6">
-          <button onClick={() => setAppState(AppState.READY)} className="group relative px-20 py-8 bg-brand-yellow text-brand-emeraldDark rounded-full font-black text-2xl shadow-[0_0_50px_rgba(255,198,47,0.3)] hover:scale-105 transition-all flex items-center gap-4 active:scale-95">BẮT ĐẦU CHƯƠNG TRÌNH <Play className="w-8 h-8 fill-current" /></button>
+          <button onClick={() => setAppState(AppState.READY)} className="group relative px-20 py-8 bg-brand-yellow text-brand-emeraldDark rounded-full font-black text-2xl shadow-[0_0_50px_rgba(255,198,47,0.3)] hover:scale-105 transition-all flex items-center gap-4 active:scale-95">{t.startProgram} <Play className="w-8 h-8 fill-current" /></button>
         </div>
       )}
     </div>
@@ -628,16 +826,16 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-6">
             <div className="flex justify-between items-center">
               <h3 className="text-brand-yellow font-bold uppercase tracking-widest flex items-center gap-2">
-                <PieChart className="w-5 h-5" /> Chọn hạng mục Giải thưởng
+                <PieChart className="w-5 h-5" /> {t.selectPrize}
               </h3>
               <div className="flex items-center gap-3">
-                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Cơ cấu Giải thưởng"><Settings className="w-5 h-5" /></button>
-                  <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title="Quản lý dữ liệu"><Edit3 className="w-5 h-5" /></button>
+                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title={t.prizeStructure}><Settings className="w-5 h-5" /></button>
+                  <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title={t.manageData}><Edit3 className="w-5 h-5" /></button>
                   {/* REMOVED SETTINGS BUTTON HERE */}
                   <button 
                       onClick={() => showConfirm(
-                          "Reset", 
-                          "Quay về màn hình cấu hình? (Dữ liệu người trúng thưởng lượt này sẽ bị xóa nếu chưa lưu)", 
+                          t.backToSetupConfirmTitle, 
+                          t.backToSetupConfirmMsg, 
                           () => {
                               setBatchWinners([]); // Clear current winners
                               setLastBatchIds([]);
@@ -656,7 +854,7 @@ const App: React.FC = () => {
                 <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
                   <p className="font-bold text-xs md:text-sm leading-tight text-white line-clamp-2 mb-2">{p.name}</p>
                   <div>
-                    <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">Còn: {p.quantity}</span>
+                    <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">{t.remaining} {p.quantity}</span>
                   </div>
                 </button>
               ))}
@@ -670,7 +868,7 @@ const App: React.FC = () => {
              <div className="bg-black/40 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
                 <UserCheck className="w-4 h-4 text-brand-yellow" />
                 <span className="text-xs font-mono text-teal-100">
-                   Khả dụng: <span className="font-bold text-white">{eligibleCount}</span> / {employees.length}
+                   {t.available} <span className="font-bold text-white">{eligibleCount}</span> / {employees.length}
                 </span>
              </div>
           </div>
@@ -695,7 +893,7 @@ const App: React.FC = () => {
                           <Minus className="w-4 h-4" />
                       </button>
                       <div className="flex flex-col items-center w-12">
-                          <span className="text-xs text-brand-yellow font-black uppercase">Người</span>
+                          <span className="text-xs text-brand-yellow font-black uppercase">{lang === 'vi' ? 'Người' : lang === 'en' ? 'Qty' : 'ဦး'}</span>
                           <span className="text-lg font-bold leading-none">{spinCount}</span>
                       </div>
                       <button 
@@ -716,7 +914,7 @@ const App: React.FC = () => {
                           <Minus className="w-4 h-4" />
                       </button>
                       <div className="flex flex-col items-center w-12">
-                          <span className="text-xs text-brand-yellow font-black uppercase">Giây</span>
+                          <span className="text-xs text-brand-yellow font-black uppercase">{lang === 'vi' ? 'Giây' : lang === 'en' ? 'Sec' : 'စက္ကန့်'}</span>
                           <span className="text-lg font-bold leading-none">{spinDuration}s</span>
                       </div>
                       <button onClick={() => setSpinDuration(Math.min(60, spinDuration + 1))} className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition">
@@ -726,7 +924,7 @@ const App: React.FC = () => {
               </div>
 
               <button onClick={startSpin} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
-                BẮT ĐẦU QUAY
+                {t.spinNow}
               </button>
             </div>
           )}
@@ -736,15 +934,15 @@ const App: React.FC = () => {
         <div className="mt-12 glass-panel rounded-3xl p-8 border-t-4 border-t-brand-yellow relative z-20">
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-2xl font-bold flex items-center gap-3 text-white">
-              <History className="w-7 h-7 text-brand-yellow" /> Danh sách trúng thưởng
+              <History className="w-7 h-7 text-brand-yellow" /> {t.winnersHistory}
             </h3>
             <button onClick={() => ExcelService.exportWinners(winners)} disabled={winners.length === 0} className="px-8 py-3 bg-brand-emerald text-white rounded-xl font-bold hover:bg-brand-emerald/80 transition flex items-center gap-3 shadow-lg">
-              <Download className="w-5 h-5" /> Export Excel
+              <Download className="w-5 h-5" /> {t.exportExcel}
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {winners.length === 0 ? (
-              <div className="col-span-full text-center py-10 opacity-30 italic text-teal-100">Chưa tìm thấy chủ nhân của các giải thưởng.</div>
+              <div className="col-span-full text-center py-10 opacity-30 italic text-teal-100">{t.noWinnersYet}</div>
             ) :
               winners.map((w) => (
                 <div key={w.id} className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-brand-yellow/30 transition-all flex justify-between items-start group">
@@ -770,11 +968,15 @@ const App: React.FC = () => {
             <div className="relative z-10 w-full max-w-4xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-6 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 flex flex-col max-h-[90vh]">
               <div className="relative z-10 flex flex-col items-center gap-4 h-full">
                 <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-8 py-2 rounded-full uppercase text-lg md:text-xl animate-bounce tracking-[0.2em] shadow-[0_0_30px_rgba(255,198,47,0.8)] border-2 border-white shrink-0">
-                  {batchWinners.length > 1 ? 'DANH SÁCH TRÚNG THƯỞNG' : 'WINNER'}
+                  {batchWinners.length > 1 
+                    ? (lang === 'vi' ? 'DANH SÁCH TRÚNG THƯỜNG' : lang === 'en' ? 'WINNERS LIST' : 'ကံထူးရှင်စာရင်း') 
+                    : t.congratulations}
                 </div>
                 
                 <div className="py-2 shrink-0">
-                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-1 uppercase tracking-widest">Giải thưởng</p>
+                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-1 uppercase tracking-widest">
+                        {lang === 'vi' ? 'Giải thưởng' : lang === 'en' ? 'Prize' : 'ရရှိသည့်ဆု'}
+                      </p>
                       <div className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-2xl leading-tight">
                           {currentPrize?.name}
                       </div>
@@ -801,7 +1003,7 @@ const App: React.FC = () => {
                 <div className="min-h-[60px] bg-black/20 p-4 rounded-3xl italic text-base md:text-lg text-teal-100 max-w-xl mx-auto leading-relaxed border border-brand-yellow/10 shadow-inner w-full shrink-0">
                      {aiLoading ? (
                         <p className="animate-pulse text-brand-yellow flex items-center justify-center gap-3">
-                           <RefreshCw className="animate-spin w-4 h-4" /> AI đang soạn lời chúc...
+                           <RefreshCw className="animate-spin w-4 h-4" /> {lang === 'vi' ? 'AI đang soạn lời chúc...' : lang === 'en' ? 'AI is drafting congratulatory message...' : 'AI က ဂုဏ်ပြုလွှာ ရေးသားနေပါသည်...'}
                         </p>
                      ) : (
                         <div className="relative">
@@ -813,8 +1015,8 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="pt-4 flex flex-col md:flex-row justify-center gap-3 shrink-0">
-                    <button onClick={handleCancelSpin} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">HỦY / QUAY LẠI</button>
-                    <button onClick={confirmBatchWinners} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">XÁC NHẬN / TIẾP TỤC</button>
+                    <button onClick={handleCancelSpin} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">{t.cancelBack}</button>
+                    <button onClick={confirmBatchWinners} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">{t.confirmSave}</button>
                 </div>
               </div>
             </div>
@@ -826,6 +1028,53 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#002e2c] bg-[radial-gradient(circle_at_top,_#006B68_0%,_#002e2c_60%)] text-white p-4 md:p-6 lg:p-8 font-sans overflow-x-hidden relative flex flex-col justify-between">
+      {/* Floating Language Switcher */}
+      <div className="absolute top-4 left-4 z-[95] flex items-center">
+        {!isLangMenuOpen ? (
+          <button
+            onClick={() => { setIsLangMenuOpen(true); playSound('click'); }}
+            className="flex items-center gap-2 bg-black/50 backdrop-blur-md px-3.5 py-2 border border-white/15 rounded-full shadow-lg hover:bg-black/70 transition-all hover:scale-105 active:scale-95 text-xs font-bold text-teal-100 hover:text-white"
+            title="Đổi ngôn ngữ / Change Language / ဘာသာစကားပြောင်းရန်"
+          >
+            <Globe className="w-4 h-4 text-brand-yellow" />
+            <span className="flex items-center gap-1.5 uppercase font-bold tracking-wider">
+              {lang === 'mm' && <><span>🇲🇲</span> MM</>}
+              {lang === 'en' && <><span>🇺🇸</span> EN</>}
+              {lang === 'vi' && <><span>🇻🇳</span> VI</>}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-teal-200/70 ml-0.5" />
+          </button>
+        ) : (
+          <div className="flex items-center gap-1 bg-black/70 backdrop-blur-md p-1 border border-white/20 rounded-full shadow-2xl animate-fade-in">
+            <button
+              onClick={() => { handleLangChange('mm'); setIsLangMenuOpen(false); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase transition ${lang === 'mm' ? 'bg-brand-yellow text-brand-emeraldDark' : 'text-gray-300 hover:text-white hover:bg-white/10'}`}
+            >
+              <span className="text-sm">🇲🇲</span> Myanmar
+            </button>
+            <button
+              onClick={() => { handleLangChange('en'); setIsLangMenuOpen(false); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase transition ${lang === 'en' ? 'bg-brand-yellow text-brand-emeraldDark' : 'text-gray-300 hover:text-white hover:bg-white/10'}`}
+            >
+              <span className="text-sm">🇺🇸</span> English
+            </button>
+            <button
+              onClick={() => { handleLangChange('vi'); setIsLangMenuOpen(false); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase transition ${lang === 'vi' ? 'bg-brand-yellow text-brand-emeraldDark' : 'text-gray-300 hover:text-white hover:bg-white/10'}`}
+            >
+              <span className="text-sm">🇻🇳</span> Tiếng Việt
+            </button>
+            <button
+              onClick={() => { setIsLangMenuOpen(false); playSound('click'); }}
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-white/20 rounded-full transition ml-1"
+              title="Đóng / Close / ပိတ်ပါ"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
       {!isAppUnlocked ? (
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-brand-emeraldDark/80 border-2 border-brand-yellow/30 p-8 md:p-12 rounded-[40px] shadow-2xl backdrop-blur-xl text-center space-y-8 animate-fade-in relative z-10">
@@ -839,9 +1088,9 @@ const App: React.FC = () => {
               
               <div className="space-y-1">
                 <h1 className="text-4xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-white to-brand-yellow uppercase tracking-tight">
-                  YEAR END PARTY
+                  {t.securityTitle}
                 </h1>
-                <p className="text-teal-200 text-xs font-light tracking-[0.4em] uppercase opacity-90">HỆ THỐNG QUAY SỐ TRÚNG THƯỜNG</p>
+                <p className="text-teal-200 text-xs font-light tracking-[0.4em] uppercase opacity-90">{t.securitySubtitle}</p>
               </div>
             </div>
             
@@ -849,10 +1098,10 @@ const App: React.FC = () => {
             
             <form onSubmit={handleAppUnlockSubmit} className="space-y-6">
               <div className="space-y-2 text-left">
-                <label className="block text-xs font-black text-brand-yellow uppercase tracking-widest text-center mb-1">MÃ BẢO MẬT SỰ KIỆN</label>
+                <label className="block text-xs font-black text-brand-yellow uppercase tracking-widest text-center mb-1">{t.securityLabel}</label>
                 <input 
                   type="password" 
-                  placeholder="Nhập mã bảo mật..." 
+                  placeholder={t.securityPlaceholder} 
                   value={appPasswordInput}
                   onChange={(e) => setAppPasswordInput(e.target.value)}
                   className="w-full p-5 bg-black/40 border-2 border-brand-yellow/20 rounded-2xl text-center text-white focus:outline-none focus:border-brand-yellow font-mono text-2xl tracking-[0.2em] transition placeholder:text-gray-600 focus:placeholder:text-transparent"
@@ -864,11 +1113,11 @@ const App: React.FC = () => {
               </div>
               
               <button type="submit" className="w-full py-5 bg-gradient-to-r from-brand-yellow to-yellow-400 hover:from-yellow-400 hover:to-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-base transition-all hover:scale-[1.03] active:scale-95 shadow-[0_10px_30px_rgba(255,198,47,0.3)] border border-white/20">
-                Xác nhận & Bắt đầu
+                {t.securityConfirm}
               </button>
             </form>
             
-            <p className="text-[10px] text-teal-200/50 uppercase tracking-widest font-mono">Hệ thống bảo mật tự động • YEP 2026</p>
+            <p className="text-[10px] text-teal-200/50 uppercase tracking-widest font-mono">{t.securityFooter}</p>
           </div>
         </div>
       ) : (
@@ -881,10 +1130,10 @@ const App: React.FC = () => {
               playSound('click');
             }}
             className="absolute top-4 right-4 z-[90] p-2 bg-black/30 border border-white/10 text-gray-400 hover:text-red-400 hover:border-red-500/30 rounded-xl transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
-            title="Khóa màn hình"
+            title={t.quickLock}
           >
             <Lock className="w-4 h-4" />
-            <span className="hidden sm:inline">Khóa màn hình</span>
+            <span className="hidden sm:inline">{t.quickLock}</span>
           </button>
 
           {settings.fallingIconsEnabled && <FallingIcons icons={fallingIcons} />}
@@ -895,6 +1144,7 @@ const App: React.FC = () => {
               <DataManager 
                   employees={employees} 
                   prizes={prizes} 
+                  winners={winners}
                   onUpdateEmployees={(data) => handleDataUpdate('employees', data)} 
                   onUpdatePrizes={(data) => handleDataUpdate('prizes', data)} 
                   onClose={() => setShowDataManager(false)} 

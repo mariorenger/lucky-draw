@@ -2,8 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { Employee } from "../types";
 
-export const generateCongratulation = async (employee: Employee, prizeName: string): Promise<string> => {
-  const defaultMessage = `Chúc mừng ${employee.name} đã may mắn trúng giải ${prizeName}! Chúc bạn gặt hái thêm nhiều thành công mới cùng công ty! 🎉`;
+export const generateCongratulation = async (employee: Employee, prizeName: string, lang: 'vi' | 'en' | 'mm' = 'mm'): Promise<string> => {
+  let defaultMessage = `Chúc mừng ${employee.name} đã may mắn trúng giải ${prizeName}! Chúc bạn gặt hái thêm nhiều thành công mới cùng công ty! 🎉`;
+  if (lang === 'en') {
+    defaultMessage = `Congratulations to ${employee.name} on winning the ${prizeName}! Wishing you a wonderful year ahead! 🎉`;
+  } else if (lang === 'mm') {
+    defaultMessage = `${prizeName} ဆုကို ဆွတ်ခူးရရှိသွားသော ${employee.name} အား အထူးပင် ဂုဏ်ယူဝမ်းမြောက်ပါသည်! ပိုမိုအောင်မြင်သော နှစ်သစ်ဖြစ်ပါစေ! 🎉`;
+  }
   
   try {
     const apiKey = process.env.API_KEY || "";
@@ -31,8 +36,9 @@ export const generateCongratulation = async (employee: Employee, prizeName: stri
       Giải thưởng nhận được: ${prizeName}
       
       Yêu cầu:
-      - Nếu tên là một mã số dự thưởng hoặc một chữ số (Ví dụ: 12, 345, SBD-102), hãy chúc mừng chủ nhân của con số may mắn này bằng giọng điệu hân hoan, tràn đầy tài lộc, chúc họ một năm mới vạn sự hanh thông và phát tài phát lộc.
-      - Nếu là tên người cụ thể, hãy tận dụng thông tin về tên hoặc phòng ban để chơi chữ hoặc tạo sự thân mật (ví dụ: "IT mà trúng giải này thì code chạy phăm phăm").
+      - Ngôn ngữ viết lời chúc: ${lang === 'vi' ? 'Tiếng Việt' : lang === 'en' ? 'English' : 'မြန်မာဘာသာ (Myanmar/Burmese)'}. Hãy viết hoàn toàn bằng ngôn ngữ này.
+      - Nếu tên là một mã số dự thưởng hoặc một chữ số (Ví dụ: 12, 345, SBD-102), hãy chúc mừng chủ nhân của con số may mắn này bằng giọng điệu hân hoan, tràn đầy tài lộc.
+      - Nếu là tên người cụ thể, hãy tạo sự thân mật, vui tươi.
       - Giọng văn: Bùng nổ, vui vẻ, thân thiện.
       - Độ dài: Tối đa 2 câu.
       - Nếu là Giải Đặc Biệt hoặc Giải Nhất, hãy nâng tầm sự hào hứng lên mức cao nhất.

@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Save, User, Gift, AlertCircle, Edit2, AlertTriangle } from 'lucide-react';
-import { Employee, Prize } from '../types';
+import { Employee, Prize, Winner } from '../types';
 
 interface DataManagerProps {
   employees: Employee[];
   prizes: Prize[];
+  winners: Winner[];
   onUpdateEmployees: (data: Employee[]) => void;
   onUpdatePrizes: (data: Prize[]) => void;
   onClose: () => void;
@@ -20,7 +21,7 @@ interface ConfirmState {
 }
 
 const DataManager: React.FC<DataManagerProps> = ({ 
-  employees, prizes, onUpdateEmployees, onUpdatePrizes, onClose 
+  employees, prizes, winners, onUpdateEmployees, onUpdatePrizes, onClose 
 }) => {
   const [activeTab, setActiveTab] = useState<'employees' | 'prizes'>('employees');
   const [localEmployees, setLocalEmployees] = useState<any[]>([]);
@@ -40,7 +41,7 @@ const DataManager: React.FC<DataManagerProps> = ({
   const getCurrentData = () => activeTab === 'employees' ? localEmployees : localPrizes;
   const setCurrentData = (data: any[]) => activeTab === 'employees' ? setLocalEmployees(data) : setLocalPrizes(data);
 
-  // Helper to get all unique keys from data
+  // Helper to get all unique keys from data (mainly for employees now)
   const getColumns = (data: any[]) => {
     const keys = new Set<string>();
     // Add default keys first
@@ -50,13 +51,13 @@ const DataManager: React.FC<DataManagerProps> = ({
         keys.add('department');
     } else {
         keys.add('name');
-        keys.add('quantity'); // This maps to originalQuantity in logic
+        keys.add('originalQuantity');
     }
     
     // Add other keys found in data
     data.forEach(item => {
       Object.keys(item).forEach(k => {
-        if (k !== 'id' && k !== 'originalQuantity') keys.add(k);
+        if (k !== 'id' && k !== 'originalQuantity' && k !== 'quantity' && k !== 'image') keys.add(k);
       });
     });
     return Array.from(keys);
@@ -66,26 +67,30 @@ const DataManager: React.FC<DataManagerProps> = ({
 
   const handleCellChange = (rowIndex: number, column: string, value: string) => {
     const newData = [...getCurrentData()];
-    if (activeTab === 'prizes' && column === 'quantity') {
-        const val = parseInt(value) || 0;
-        newData[rowIndex][column] = val;
-        newData[rowIndex]['originalQuantity'] = val; // Update total quantity definition
-    } else {
-        newData[rowIndex][column] = value;
-    }
+    newData[rowIndex][column] = value;
     setCurrentData(newData);
   };
 
   const addRow = () => {
-    const newData = [...getCurrentData()];
-    const newId = `${activeTab === 'employees' ? 'emp' : 'prize'}-${Date.now()}`;
-    const newRow: any = { id: newId };
-    columns.forEach(col => {
-        newRow[col] = activeTab === 'prizes' && col === 'quantity' ? 1 : '';
-    });
-    // Set defaults
-    if (activeTab === 'prizes') newRow.originalQuantity = 1;
-    setCurrentData([newRow, ...newData]); // Add to top
+    if (activeTab === 'employees') {
+        const newData = [...localEmployees];
+        const newId = `emp-${Date.now()}`;
+        const newRow: any = { id: newId };
+        columns.forEach(col => {
+            newRow[col] = '';
+        });
+        setLocalEmployees([newRow, ...newData]);
+    } else {
+        const newData = [...localPrizes];
+        const newId = `prize-${Date.now()}`;
+        const newRow = {
+            id: newId,
+            name: '',
+            quantity: 1,
+            originalQuantity: 1
+        };
+        setLocalPrizes([newRow, ...newData]);
+    }
   };
 
   const deleteRow = (rowIndex: number) => {
@@ -103,16 +108,17 @@ const DataManager: React.FC<DataManagerProps> = ({
   };
 
   const addColumn = () => {
-    const name = prompt("Nhập tên cột mới (Ví dụ: Chi nhánh):"); // Prompt is usually allowed, but if blocked we can use a small input UI. Kept simple for now.
+    if (activeTab !== 'employees') return;
+    const name = prompt("Nhập tên cột mới (Ví dụ: Chi nhánh):");
     if (name && !columns.includes(name)) {
-        const newData = getCurrentData().map(item => ({ ...item, [name]: '' }));
-        setCurrentData(newData);
+        const newData = localEmployees.map(item => ({ ...item, [name]: '' }));
+        setLocalEmployees(newData);
     }
   };
 
   const deleteColumn = (col: string) => {
-    if (['name', 'email', 'quantity'].includes(col)) {
-        // Replace alert
+    if (activeTab !== 'employees') return;
+    if (['name', 'email'].includes(col)) {
         setConfirmModal({
             isOpen: true,
             title: "Không thể xóa",
@@ -127,12 +133,12 @@ const DataManager: React.FC<DataManagerProps> = ({
         title: "Xóa cột",
         message: `Bạn có chắc muốn xóa cột "${col}" và toàn bộ dữ liệu trong cột này?`,
         onConfirm: () => {
-            const newData = getCurrentData().map(item => {
+            const newData = localEmployees.map(item => {
                 const newItem = { ...item };
                 delete newItem[col];
                 return newItem;
             });
-            setCurrentData(newData);
+            setLocalEmployees(newData);
             setConfirmModal(prev => ({ ...prev, isOpen: false }));
         }
     });
@@ -181,9 +187,11 @@ const DataManager: React.FC<DataManagerProps> = ({
         <button onClick={addRow} className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-600/50 rounded-lg hover:bg-green-600 hover:text-white transition flex items-center gap-2 text-sm font-bold">
             <Plus className="w-4 h-4" /> Thêm dòng mới
         </button>
-        <button onClick={addColumn} className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/50 rounded-lg hover:bg-blue-600 hover:text-white transition flex items-center gap-2 text-sm font-bold">
-            <Plus className="w-4 h-4" /> Thêm cột tùy ý
-        </button>
+        {activeTab === 'employees' && (
+          <button onClick={addColumn} className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/50 rounded-lg hover:bg-blue-600 hover:text-white transition flex items-center gap-2 text-sm font-bold">
+              <Plus className="w-4 h-4" /> Thêm cột tùy ý
+          </button>
+        )}
       </div>
 
       {/* Table Area */}
@@ -191,54 +199,144 @@ const DataManager: React.FC<DataManagerProps> = ({
         <div className="min-w-full inline-block align-middle">
             <div className="border border-white/10 rounded-xl overflow-hidden">
                 <table className="min-w-full divide-y divide-white/10">
-                    <thead className="bg-black/20">
-                        <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-brand-yellow uppercase tracking-wider w-12">#</th>
-                            {columns.map(col => (
-                                <th key={col} className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider group relative min-w-[150px]">
-                                    <div className="flex items-center justify-between">
-                                        <span>{col === 'name' ? (activeTab === 'employees' ? 'Họ và Tên' : 'Tên Giải') : (col === 'quantity' ? 'Tổng Số Lượng' : col)}</span>
-                                        {!['name', 'email', 'quantity'].includes(col) && (
-                                            <button onClick={() => deleteColumn(col)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition">
-                                                <X className="w-3 h-3" />
+                    {activeTab === 'employees' ? (
+                        <>
+                            <thead className="bg-black/20">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-brand-yellow uppercase tracking-wider w-12">#</th>
+                                    {columns.map(col => (
+                                        <th key={col} className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider group relative min-w-[150px]">
+                                            <div className="flex items-center justify-between">
+                                                <span>{col === 'name' ? 'Họ và Tên' : col === 'email' ? 'Email/SBD' : col === 'department' ? 'Phòng ban' : col}</span>
+                                                {!['name', 'email'].includes(col) && (
+                                                    <button onClick={() => deleteColumn(col)} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition">
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </th>
+                                    ))}
+                                    <th className="px-4 py-3 w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 bg-white/5">
+                                {localEmployees.map((row, rowIndex) => (
+                                    <tr key={row.id || rowIndex} className="hover:bg-white/10 transition">
+                                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">{rowIndex + 1}</td>
+                                        {columns.map(col => (
+                                            <td key={`${row.id}-${col}`} className="px-4 py-2 whitespace-nowrap">
+                                                <input 
+                                                    type="text"
+                                                    value={row[col] || ''}
+                                                    onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
+                                                    className="w-full bg-transparent border-none focus:ring-0 text-white text-sm placeholder-white/20 p-0"
+                                                    placeholder="..."
+                                                />
+                                            </td>
+                                        ))}
+                                        <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                                            <button onClick={() => deleteRow(rowIndex)} className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/10">
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
-                                        )}
-                                    </div>
-                                </th>
-                            ))}
-                            <th className="px-4 py-3 w-12"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 bg-white/5">
-                        {getCurrentData().map((row, rowIndex) => (
-                            <tr key={row.id || rowIndex} className="hover:bg-white/10 transition">
-                                <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">{rowIndex + 1}</td>
-                                {columns.map(col => (
-                                    <td key={`${row.id}-${col}`} className="px-4 py-2 whitespace-nowrap">
-                                        <input 
-                                            type={activeTab === 'prizes' && col === 'quantity' ? 'number' : 'text'}
-                                            value={row[col]}
-                                            onChange={(e) => handleCellChange(rowIndex, col, e.target.value)}
-                                            className="w-full bg-transparent border-none focus:ring-0 text-white text-sm placeholder-white/20 p-0"
-                                            placeholder="..."
-                                        />
-                                    </td>
+                                        </td>
+                                    </tr>
                                 ))}
-                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
-                                    <button onClick={() => deleteRow(rowIndex)} className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/10">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                        {getCurrentData().length === 0 && (
-                            <tr>
-                                <td colSpan={columns.length + 2} className="px-6 py-12 text-center text-teal-200/50 italic">
-                                    Chưa có dữ liệu. Hãy thêm dòng mới hoặc import từ Excel.
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
+                                {localEmployees.length === 0 && (
+                                    <tr>
+                                        <td colSpan={columns.length + 2} className="px-6 py-12 text-center text-teal-200/50 italic">
+                                            Chưa có dữ liệu Cán bộ.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </>
+                    ) : (
+                        <>
+                            <thead className="bg-black/20">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-brand-yellow uppercase tracking-wider w-12">#</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider min-w-[200px]">Tên Giải thưởng</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider w-32">Đã trao</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider w-32">Số lượng Còn lại</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-teal-200 uppercase tracking-wider w-40">Tổng Số Lượng</th>
+                                    <th className="px-4 py-3 w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 bg-white/5">
+                                {localPrizes.map((row, rowIndex) => {
+                                    const alreadyWon = winners.filter(w => w.prize.id === row.id).length;
+                                    const originalQty = typeof row.originalQuantity === 'number' ? row.originalQuantity : (typeof row.quantity === 'number' ? row.quantity : 1);
+                                    const remainingQty = Math.max(0, originalQty - alreadyWon);
+                                    
+                                    return (
+                                        <tr key={row.id || rowIndex} className="hover:bg-white/10 transition">
+                                            <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">{rowIndex + 1}</td>
+                                            
+                                            {/* Name */}
+                                            <td className="px-4 py-2 whitespace-nowrap">
+                                                <input 
+                                                    type="text"
+                                                    value={row.name || ''}
+                                                    onChange={(e) => {
+                                                        const newData = [...localPrizes];
+                                                        newData[rowIndex].name = e.target.value;
+                                                        setLocalPrizes(newData);
+                                                    }}
+                                                    className="w-full bg-transparent border-none focus:ring-0 text-white text-sm placeholder-white/20 p-0 font-bold"
+                                                    placeholder="Tên Giải thưởng..."
+                                                />
+                                            </td>
+                                            
+                                            {/* Already Won */}
+                                            <td className="px-4 py-2 whitespace-nowrap">
+                                                <span className="px-3 py-1 bg-brand-yellow/10 text-brand-yellow rounded-full text-xs font-bold font-mono">
+                                                    {alreadyWon}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Remaining */}
+                                            <td className="px-4 py-2 whitespace-nowrap">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono ${remainingQty > 0 ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                                                    {remainingQty}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Total Quantity */}
+                                            <td className="px-4 py-2 whitespace-nowrap">
+                                                <input 
+                                                    type="number"
+                                                    min="0"
+                                                    value={originalQty}
+                                                    onChange={(e) => {
+                                                        const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                                        const newData = [...localPrizes];
+                                                        newData[rowIndex].originalQuantity = val;
+                                                        newData[rowIndex].quantity = Math.max(0, val - alreadyWon);
+                                                        setLocalPrizes(newData);
+                                                    }}
+                                                    className="w-24 bg-black/30 border border-white/10 rounded px-2 py-1 focus:ring-1 focus:ring-brand-yellow focus:border-brand-yellow text-white text-sm font-mono font-bold"
+                                                />
+                                            </td>
+                                            
+                                            {/* Delete */}
+                                            <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                                                <button onClick={() => deleteRow(rowIndex)} className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/10">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {localPrizes.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="px-6 py-12 text-center text-teal-200/50 italic">
+                                            Chưa có cơ cấu Giải thưởng.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </>
+                    )}
                 </table>
             </div>
         </div>
