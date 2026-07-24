@@ -8,7 +8,7 @@ import {
   BarChart3, PieChart, CheckCircle2, FileJson, Headphones, Speaker, 
   PlayCircle, StopCircle, RefreshCw, Sparkles, Image as ImageIcon,
   UserCheck, Edit3, Minus, Plus, Clock, Lock, Unlock, Key, ShieldAlert,
-  Globe, ChevronDown
+  Globe, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { AppState, Employee, Prize, Winner, Settings as AppSettings, RiggedSetting } from './types';
 import { Language, translations } from './services/languageService';
@@ -41,6 +41,7 @@ const App: React.FC = () => {
   });
 
   const [isLangMenuOpen, setIsLangMenuOpen] = useState<boolean>(false);
+  const [isPrizeSectionCollapsed, setIsPrizeSectionCollapsed] = useState<boolean>(false);
 
   const t = translations[lang];
 
@@ -822,15 +823,47 @@ const App: React.FC = () => {
 
     return (
       <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 pb-12 relative z-10">
-        <div className="glass-panel p-6 rounded-3xl border-brand-yellow/30 shadow-2xl">
-          <div className="flex flex-col gap-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-brand-yellow font-bold uppercase tracking-widest flex items-center gap-2">
-                <PieChart className="w-5 h-5" /> {t.selectPrize}
-              </h3>
+        {/* Main Title Banner */}
+        <div className="text-center pt-2 pb-1 flex flex-col items-center gap-1 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-5 h-5 md:w-6 md:h-6 text-brand-yellow animate-spin" />
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-yellow-100 to-brand-yellow drop-shadow-[0_4px_25px_rgba(255,198,47,0.6)] font-display">
+              BIDV YANGON
+            </h1>
+            <Sparkles className="w-5 h-5 md:w-6 md:h-6 text-brand-yellow animate-spin" />
+          </div>
+          <h2 className="text-xl md:text-2xl lg:text-3xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-yellow-100 to-brand-yellow drop-shadow-[0_4px_20px_rgba(255,198,47,0.5)] font-display">
+            10th Anniversary Celebration
+          </h2>
+        </div>
+
+        <div className="glass-panel p-4 md:p-6 rounded-3xl border-brand-yellow/30 shadow-2xl transition-all">
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center flex-wrap gap-2">
               <div className="flex items-center gap-3">
-                  <button onClick={handleAdminClick} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title={t.prizeStructure}><Settings className="w-5 h-5" /></button>
-                  <button onClick={() => setShowDataManager(true)} className="p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50" title={t.manageData}><Edit3 className="w-5 h-5" /></button>
+                <button
+                  onClick={() => { setIsPrizeSectionCollapsed(!isPrizeSectionCollapsed); playSound('click'); }}
+                  className="px-3.5 py-1.5 bg-brand-yellow/15 hover:bg-brand-yellow/25 border border-brand-yellow/40 rounded-full text-xs font-bold text-brand-yellow flex items-center gap-2 transition active:scale-95 shadow-sm"
+                  title={isPrizeSectionCollapsed ? "Mở chọn giải" : "Thu gọn"}
+                >
+                  <PieChart className="w-4 h-4 text-brand-yellow" />
+                  {isPrizeSectionCollapsed ? (
+                    <>
+                      <span>{lang === 'vi' ? 'Đổi giải thưởng' : lang === 'en' ? 'Change Prize' : 'ဆုပြောင်းမည်'}</span>
+                      <ChevronDown className="w-4 h-4 text-brand-yellow ml-0.5" />
+                    </>
+                  ) : (
+                    <>
+                      <span>{lang === 'vi' ? 'Thu gọn' : lang === 'en' ? 'Collapse' : 'သိမ်းမည်'}</span>
+                      <ChevronUp className="w-4 h-4 text-brand-yellow ml-0.5" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 md:gap-3">
+                  <button onClick={handleAdminClick} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.prizeStructure}><Settings className="w-5 h-5" /></button>
+                  <button onClick={() => setShowDataManager(true)} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.manageData}><Edit3 className="w-5 h-5" /></button>
                   {/* REMOVED SETTINGS BUTTON HERE */}
                   <button 
                       onClick={() => showConfirm(
@@ -843,22 +876,41 @@ const App: React.FC = () => {
                               setAppState(AppState.SETUP);
                           }
                       )} 
-                      className="p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10 hover:bg-red-500/20"
+                      className="p-2.5 md:p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10 hover:bg-red-500/20 transition"
                   >
                       <RotateCcw className="w-5 h-5" />
                   </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {prizes.map(p => (
-                <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
-                  <p className="font-bold text-xs md:text-sm leading-tight text-white line-clamp-2 mb-2">{p.name}</p>
-                  <div>
-                    <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">{t.remaining} {p.quantity}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+
+            {isPrizeSectionCollapsed ? (
+              <div className="flex items-center justify-between gap-3 bg-black/40 border border-brand-yellow/30 p-3 md:p-4 rounded-2xl shadow-inner animate-fade-in">
+                <div className="flex items-center gap-3">
+                  {currentPrize ? (
+                    <span className="font-bold text-base md:text-xl text-brand-yellow flex items-center gap-2">
+                      <Gift className="w-5 h-5 md:w-6 md:h-6 text-brand-yellow" />
+                      {currentPrize.name}
+                      <span className="text-xs font-mono text-teal-100 bg-black/50 border border-white/10 px-3 py-1 rounded-full ml-1">
+                        {t.remaining} {currentPrize.quantity}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="italic text-gray-400 text-sm">{t.noPrizeSelected}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 animate-fade-in">
+                {prizes.map(p => (
+                  <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
+                    <p className="font-bold text-xs md:text-sm leading-tight text-white line-clamp-2 mb-2">{p.name}</p>
+                    <div>
+                      <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">{t.remaining} {p.quantity}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -936,8 +988,13 @@ const App: React.FC = () => {
             <h3 className="text-2xl font-bold flex items-center gap-3 text-white">
               <History className="w-7 h-7 text-brand-yellow" /> {t.winnersHistory}
             </h3>
-            <button onClick={() => ExcelService.exportWinners(winners)} disabled={winners.length === 0} className="px-8 py-3 bg-brand-emerald text-white rounded-xl font-bold hover:bg-brand-emerald/80 transition flex items-center gap-3 shadow-lg">
-              <Download className="w-5 h-5" /> {t.exportExcel}
+            <button 
+              onClick={() => ExcelService.exportWinners(winners)} 
+              disabled={winners.length === 0} 
+              className="p-3 bg-brand-emerald text-brand-yellow border border-brand-yellow/30 hover:bg-brand-emerald/80 transition rounded-2xl font-bold flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+              title={t.exportExcel}
+            >
+              <Download className="w-6 h-6" />
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -966,7 +1023,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="relative z-10 w-full max-w-4xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-6 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 flex flex-col max-h-[90vh]">
-              <div className="relative z-10 flex flex-col items-center gap-4 h-full">
+              <div className="relative z-10 flex flex-col items-center gap-3 h-full">
                 <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-8 py-2 rounded-full uppercase text-lg md:text-xl animate-bounce tracking-[0.2em] shadow-[0_0_30px_rgba(255,198,47,0.8)] border-2 border-white shrink-0">
                   {batchWinners.length > 1 
                     ? (lang === 'vi' ? 'DANH SÁCH TRÚNG THƯỜNG' : lang === 'en' ? 'WINNERS LIST' : 'ကံထူးရှင်စာရင်း') 
