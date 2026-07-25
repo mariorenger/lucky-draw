@@ -119,13 +119,14 @@ const App: React.FC = () => {
     }
   });
 
-  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean }>(() => {
+  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean, enableTease?: boolean }>(() => {
     const defaultSettings = {
       soundEnabled: true,
       demoMode: false,
       confettiEnabled: true,
       bgMusicEnabled: true,
       fallingIconsEnabled: true,
+      enableTease: false,
     };
     try {
       const saved = localStorage.getItem('_sys_yep_settings_');
@@ -931,50 +932,11 @@ const App: React.FC = () => {
             winners={batchWinners} 
             spinCount={spinCount}
             spinDuration={spinDuration}
+            enableTease={settings.enableTease ?? false}
           />
           
           {appState === AppState.READY && (
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4">
-              {/* Mini Controls for Spin Count and Duration */}
-              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-lg mb-2">
-                  <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1">
-                      <button 
-                        onClick={() => setSpinCount(Math.max(1, spinCount - 1))} 
-                        className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition"
-                      >
-                          <Minus className="w-4 h-4" />
-                      </button>
-                      <div className="flex flex-col items-center w-12">
-                          <span className="text-xs text-brand-yellow font-black uppercase">{lang === 'vi' ? 'Người' : lang === 'en' ? 'Qty' : 'ဦး'}</span>
-                          <span className="text-lg font-bold leading-none">{spinCount}</span>
-                      </div>
-                      <button 
-                        onClick={() => {
-                            const max = settings.demoMode ? 100 : (currentPrize?.quantity || 1);
-                            setSpinCount(Math.min(max, spinCount + 1));
-                        }} 
-                        className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition"
-                      >
-                          <Plus className="w-4 h-4" />
-                      </button>
-                  </div>
-
-                  <div className="w-px h-8 bg-white/10 mx-1"></div>
-
-                  <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1">
-                      <button onClick={() => setSpinDuration(Math.max(5, spinDuration - 1))} className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition">
-                          <Minus className="w-4 h-4" />
-                      </button>
-                      <div className="flex flex-col items-center w-12">
-                          <span className="text-xs text-brand-yellow font-black uppercase">{lang === 'vi' ? 'Giây' : lang === 'en' ? 'Sec' : 'စက္ကန့်'}</span>
-                          <span className="text-lg font-bold leading-none">{spinDuration}s</span>
-                      </div>
-                      <button onClick={() => setSpinDuration(Math.min(60, spinDuration + 1))} className="w-8 h-8 flex items-center justify-center text-teal-200 hover:bg-white/10 rounded-lg transition">
-                          <Plus className="w-4 h-4" />
-                      </button>
-                  </div>
-              </div>
-
+            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
               <button onClick={startSpin} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
                 {t.spinNow}
               </button>
@@ -1308,8 +1270,47 @@ const App: React.FC = () => {
                   <p className="font-bold text-brand-yellow">💡 Hướng dẫn vận hành:</p>
                   <p>1. Chọn giải thưởng bạn muốn điều chỉnh cơ cấu hoặc phân bổ cho khách mời danh dự (ví dụ: Giải Nhất, Giải Đặc biệt).</p>
                   <p>2. Chọn mã nhân viên / SBD của nhân sự tương ứng để gắn ưu tiên trúng giải.</p>
-                  <p>3. Khi thực hiện quay số cho hạng mục này, hệ thống sẽ ưu tiên chọn nhân sự bạn đã thiết lập.</p>
-                  <p>4. Nếu quay nhiều người cùng lúc mà số lượng ưu tiên ít hơn số lượng quay thực tế, các vị trí còn lại vẫn được chọn ngẫu nhiên hoàn toàn.</p>
+                  <p>3. Mặc định hệ thống quay 1 người/lượt. Có thể tùy chỉnh số lượng người quay đồng thời hoặc thời gian chạy trong phần Cấu hình lượt quay bên dưới.</p>
+                </div>
+              </div>
+
+              {/* Advanced Spin Configuration Option */}
+              <div className="p-4 bg-black/30 border border-white/10 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-brand-yellow" />
+                  <div>
+                    <h4 className="text-xs font-black text-white uppercase tracking-wider">Cấu hình lượt quay (Nâng cao)</h4>
+                    <p className="text-[10px] text-gray-400">Tùy chỉnh số người chọn trong 1 lần bấm quay và thời gian quay hiệu ứng</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
+                    <span className="text-xs text-brand-yellow font-bold uppercase">Số người/lượt:</span>
+                    <button onClick={() => setSpinCount(Math.max(1, spinCount - 1))} className="p-1 hover:bg-white/10 rounded"><Minus className="w-3.5 h-3.5 text-white" /></button>
+                    <span className="font-bold text-sm text-white px-1">{spinCount}</span>
+                    <button onClick={() => setSpinCount(Math.min(50, spinCount + 1))} className="p-1 hover:bg-white/10 rounded"><Plus className="w-3.5 h-3.5 text-white" /></button>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
+                    <span className="text-xs text-brand-yellow font-bold uppercase">Thời gian:</span>
+                    <button onClick={() => setSpinDuration(Math.max(3, spinDuration - 1))} className="p-1 hover:bg-white/10 rounded"><Minus className="w-3.5 h-3.5 text-white" /></button>
+                    <span className="font-bold text-sm text-white px-1">{spinDuration}s</span>
+                    <button onClick={() => setSpinDuration(Math.min(30, spinDuration + 1))} className="p-1 hover:bg-white/10 rounded"><Plus className="w-3.5 h-3.5 text-white" /></button>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
+                    <span className="text-xs text-brand-yellow font-bold uppercase">Mừng hụt:</span>
+                    <button 
+                      onClick={() => {
+                        setSettings(prev => ({ ...prev, enableTease: !prev.enableTease }));
+                        playSound('click');
+                      }}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${settings.enableTease ? 'bg-amber-400 text-black shadow-md font-black' : 'bg-white/10 text-gray-400 hover:text-white'}`}
+                      title={settings.enableTease ? 'Đã bật: Dừng tạm ở 1 người ngẫu nhiên rồi mới sang người trúng thật' : 'Đã tắt (Mặc định): Quay mượt và dừng trực tiếp ở người trúng'}
+                    >
+                      {settings.enableTease ? 'Bật (Giả lập)' : 'Tắt (Trực tiếp)'}
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -33,6 +33,7 @@ export interface Settings {
   soundEnabled: boolean;
   demoMode: boolean; // If true, doesn't reduce prize count
   confettiEnabled: boolean;
+  enableTease?: boolean; // Hiệu ứng mừng hụt (mặc định false - quay thẳng ra người trúng)
 }
 
 export interface RiggedSetting {
