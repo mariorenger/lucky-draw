@@ -1044,16 +1044,16 @@ const App: React.FC = () => {
                <div className="w-[200vw] h-[200vw] bg-[conic-gradient(from_0deg_at_50%_50%,rgba(255,198,47,0.1)_0deg,transparent_20deg,rgba(255,198,47,0.1)_40deg,transparent_60deg,rgba(255,198,47,0.1)_80deg,transparent_100deg,rgba(255,198,47,0.1)_120deg,transparent_140deg,rgba(255,198,47,0.1)_160deg,transparent_180deg,rgba(255,198,47,0.1)_200deg,transparent_220deg,rgba(255,198,47,0.1)_240deg,transparent_260deg,rgba(255,198,47,0.1)_280deg,transparent_300deg,rgba(255,198,47,0.1)_320deg,transparent_340deg,rgba(255,198,47,0.1)_360deg)] animate-[spin_20s_linear_infinite]" />
             </div>
 
-            <div className="relative z-10 w-full max-w-4xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-6 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 flex flex-col max-h-[90vh]">
-              <div className="relative z-10 flex flex-col items-center gap-3 h-full">
-                <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-8 py-2 rounded-full uppercase text-lg md:text-xl animate-bounce tracking-[0.2em] shadow-[0_0_30px_rgba(255,198,47,0.8)] border-2 border-white shrink-0">
+            <div className="relative z-10 w-full max-w-5xl bg-brand-emeraldDark border-4 border-brand-yellow rounded-[40px] p-5 md:p-8 text-center shadow-[0_0_150px_rgba(255,198,47,0.6),0_0_50px_rgba(255,255,255,0.3)_inset] transform transition-all scale-100 flex flex-col max-h-[90vh]">
+              <div className="relative z-10 flex flex-col items-center gap-3 h-full min-h-0 pt-1">
+                <div className="bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow text-brand-emeraldDark font-black px-6 md:px-8 py-2 md:py-2.5 rounded-full uppercase text-base md:text-xl tracking-[0.15em] shadow-[0_0_35px_rgba(255,198,47,0.9)] border-2 border-white shrink-0 animate-pulse">
                   {batchWinners.length > 1 
-                    ? (lang === 'vi' ? 'DANH SÁCH TRÚNG THƯỜNG' : lang === 'en' ? 'WINNERS LIST' : 'ကံထူးရှင်စာရင်း') 
+                    ? (lang === 'vi' ? `DANH SÁCH ${batchWinners.length} NGƯỜI TRÚNG THƯỜNG` : lang === 'en' ? `${batchWinners.length} WINNERS LIST` : `ကံထူးရှင် ${batchWinners.length} ဦး စာရင်း`) 
                     : t.congratulations}
                 </div>
                 
-                <div className="py-2 shrink-0">
-                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-1 uppercase tracking-widest">
+                <div className="py-1 shrink-0">
+                      <p className="text-[10px] font-mono text-brand-yellow/70 mb-0.5 uppercase tracking-widest">
                         {lang === 'vi' ? 'Giải thưởng' : lang === 'en' ? 'Prize' : 'ရရှိသည့်ဆု'}
                       </p>
                       <div className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight drop-shadow-2xl leading-tight">
@@ -1061,17 +1061,28 @@ const App: React.FC = () => {
                       </div>
                 </div>
 
-                {/* List Container */}
-                <div className={`w-full overflow-y-auto custom-scrollbar p-2 ${batchWinners.length > 1 ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'flex items-center justify-center'}`}>
+                {/* List Container with Flex-1 Min-H-0 Overflow-Y-Auto for Perfect Scrolling */}
+                <div className={`w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 border border-white/10 rounded-2xl bg-black/30 backdrop-blur-sm
+                    ${batchWinners.length === 1 
+                        ? 'flex items-center justify-center' 
+                        : batchWinners.length <= 4 
+                            ? 'grid grid-cols-1 md:grid-cols-2 gap-3' 
+                            : batchWinners.length <= 8 
+                                ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3' 
+                                : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5'}`}
+                >
                     {batchWinners.map((w, idx) => (
-                        <div key={idx} className={`bg-black/20 p-4 rounded-2xl border border-brand-yellow/20 ${batchWinners.length === 1 ? 'w-full max-w-xl py-10' : ''}`}>
-                             <h1 className={`${batchWinners.length === 1 ? 'text-4xl md:text-6xl' : 'text-xl md:text-2xl'} font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-300 uppercase`}>
+                        <div key={idx} className={`bg-gradient-to-b from-white/10 to-white/5 p-3 rounded-xl border border-brand-yellow/30 flex flex-col justify-center items-center shadow-md hover:border-amber-300 transition relative overflow-hidden ${batchWinners.length === 1 ? 'w-full max-w-xl py-10' : ''}`}>
+                             <div className="text-[10px] font-mono font-bold text-brand-yellow/90 bg-brand-yellow/20 border border-brand-yellow/40 px-2 py-0.5 rounded-full mb-1">
+                                #{idx + 1}
+                             </div>
+                             <h1 className={`${batchWinners.length === 1 ? 'text-4xl md:text-6xl' : batchWinners.length > 8 ? 'text-sm md:text-base' : 'text-base md:text-lg'} font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-yellow-100 to-yellow-300 uppercase text-center truncate w-full px-1`}>
                                 {w.name}
                              </h1>
-                             <p className={`${batchWinners.length === 1 ? 'text-lg' : 'text-teal-200'} font-medium tracking-wide font-mono mt-1`}>
+                             <p className={`${batchWinners.length === 1 ? 'text-lg' : 'text-[11px]'} text-teal-200/80 font-medium tracking-wide font-mono mt-0.5 truncate w-full text-center px-1`}>
                                 {w.email}
                              </p>
-                             <p className={`${batchWinners.length === 1 ? 'text-xl' : 'text-base'} text-brand-yellow font-bold uppercase tracking-widest mt-1`}>
+                             <p className={`${batchWinners.length === 1 ? 'text-xl' : 'text-[10px]'} text-brand-yellow font-bold uppercase tracking-widest mt-1 bg-black/40 px-2.5 py-0.5 rounded-full truncate max-w-full`}>
                                 {w.department}
                              </p>
                         </div>
@@ -1079,21 +1090,21 @@ const App: React.FC = () => {
                 </div>
 
                 {/* AI Message Area */}
-                <div className="min-h-[60px] bg-black/20 p-4 rounded-3xl italic text-base md:text-lg text-teal-100 max-w-xl mx-auto leading-relaxed border border-brand-yellow/10 shadow-inner w-full shrink-0">
+                <div className="min-h-[48px] bg-black/20 p-2.5 rounded-2xl italic text-xs md:text-sm text-teal-100 max-w-xl mx-auto leading-relaxed border border-brand-yellow/10 shadow-inner w-full shrink-0">
                      {aiLoading ? (
-                        <p className="animate-pulse text-brand-yellow flex items-center justify-center gap-3">
-                           <RefreshCw className="animate-spin w-4 h-4" /> {lang === 'vi' ? 'AI đang soạn lời chúc...' : lang === 'en' ? 'AI is drafting congratulatory message...' : 'AI က ဂုဏ်ပြုလွှာ ရေးသားနေပါသည်...'}
+                        <p className="animate-pulse text-brand-yellow flex items-center justify-center gap-3 text-xs">
+                           <RefreshCw className="animate-spin w-3.5 h-3.5" /> {lang === 'vi' ? 'AI đang soạn lời chúc...' : lang === 'en' ? 'AI is drafting congratulatory message...' : 'AI က ဂုဏ်ပြုလွှာ ရေးသားနေပါသည်...'}
                         </p>
                      ) : (
-                        <div className="relative">
-                            <span className="text-2xl text-brand-yellow absolute -top-2 -left-1">"</span>
+                        <div className="relative px-4">
+                            <span className="text-lg text-brand-yellow absolute -top-1 left-0">"</span>
                             {aiMessage}
-                            <span className="text-2xl text-brand-yellow absolute -bottom-4 -right-1">"</span>
+                            <span className="text-lg text-brand-yellow absolute -bottom-2 right-0">"</span>
                         </div>
                      )}
                 </div>
 
-                <div className="pt-4 flex flex-col md:flex-row justify-center gap-3 shrink-0">
+                <div className="pt-1 flex flex-col md:flex-row justify-center gap-3 shrink-0">
                     <button onClick={handleCancelSpin} className="px-5 py-2 bg-red-600/20 text-red-400 border border-red-500/50 font-bold text-sm rounded-full hover:bg-red-600 hover:text-white transition active:scale-95">{t.cancelBack}</button>
                     <button onClick={confirmBatchWinners} className="px-8 py-2 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black text-lg rounded-full shadow-[0_0_40px_rgba(255,198,47,0.6)] hover:scale-105 transition active:scale-95 border-2 border-white/50">{t.confirmSave}</button>
                 </div>
