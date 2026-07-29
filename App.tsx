@@ -936,7 +936,67 @@ const App: React.FC = () => {
           />
           
           {appState === AppState.READY && (
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
+            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-3">
+              {/* Controls for Spin Count and Duration on Main Screen */}
+              <div className="flex items-center gap-3 bg-black/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-amber-400/40 shadow-[0_10px_25px_rgba(0,0,0,0.8)]">
+                  <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
+                      <button 
+                        onClick={() => {
+                          setSpinCount(Math.max(1, spinCount - 1));
+                          playSound('click');
+                        }} 
+                        className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
+                        title="Giảm số người quay"
+                      >
+                          <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="flex flex-col items-center px-2 min-w-[55px]">
+                          <span className="text-[10px] text-brand-yellow font-black uppercase tracking-wider">{lang === 'vi' ? 'Số người' : lang === 'en' ? 'Qty' : 'ဦး'}</span>
+                          <span className="text-base font-black leading-none text-white">{spinCount}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                            const max = settings.demoMode ? 100 : (currentPrize?.quantity || 1);
+                            setSpinCount(Math.min(max, spinCount + 1));
+                            playSound('click');
+                        }} 
+                        className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
+                        title="Tăng số người quay"
+                      >
+                          <Plus className="w-4 h-4" />
+                      </button>
+                  </div>
+
+                  <div className="w-px h-8 bg-white/20"></div>
+
+                  <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
+                      <button 
+                        onClick={() => {
+                          setSpinDuration(Math.max(3, spinDuration - 1));
+                          playSound('click');
+                        }} 
+                        className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
+                        title="Giảm thời gian quay"
+                      >
+                          <Minus className="w-4 h-4" />
+                      </button>
+                      <div className="flex flex-col items-center px-2 min-w-[55px]">
+                          <span className="text-[10px] text-brand-yellow font-black uppercase tracking-wider">{lang === 'vi' ? 'Thời gian' : lang === 'en' ? 'Sec' : 'စက္ကန့်'}</span>
+                          <span className="text-base font-black leading-none text-white">{spinDuration}s</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSpinDuration(Math.min(30, spinDuration + 1));
+                          playSound('click');
+                        }} 
+                        className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
+                        title="Tăng thời gian quay"
+                      >
+                          <Plus className="w-4 h-4" />
+                      </button>
+                  </div>
+              </div>
+
               <button onClick={startSpin} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
                 {t.spinNow}
               </button>
