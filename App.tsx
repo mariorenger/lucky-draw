@@ -24,6 +24,7 @@ import {
   syncEmployeesToCloud, 
   syncPrizesToCloud, 
   addWinnersToCloud, 
+  removeWinnersFromCloud,
   updatePrizeCountCloud, 
   clearWinnersInCloud, 
   syncConfigToCloud,
@@ -62,90 +63,30 @@ const App: React.FC = () => {
     playSound('click');
   };
 
-  // State loaded from localStorage for resilience against page reloads/F5
-  const [employees, setEmployees] = useState<Employee[]>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_employees_');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  const [prizes, setPrizes] = useState<Prize[]>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_prizes_');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  const [winners, setWinners] = useState<Winner[]>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_winners_');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  const [currentPrize, setCurrentPrize] = useState<Prize | null>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_current_prize_');
-      return saved ? JSON.parse(saved) : null;
-    } catch (e) {
-      return null;
-    }
-  });
-
+  // State loaded from server purely to avoid client-side state discrepancy
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [winners, setWinners] = useState<Winner[]>([]);
+  const [currentPrize, setCurrentPrize] = useState<Prize | null>(null);
   const [appState, setAppState] = useState<AppState>(() => {
     try {
-      const saved = localStorage.getItem('_sys_yep_app_state_');
-      // Reset spinning/winner state to READY to avoid half-spun/stuck states
-      if (saved === AppState.SPINNING || saved === AppState.WINNER) {
-        return AppState.READY;
-      }
-      return (saved as AppState) || AppState.SETUP;
+      const savedRole = sessionStorage.getItem('_sys_user_role_') || localStorage.getItem('_sys_user_role_');
+      return savedRole === 'MC' ? AppState.READY : AppState.SETUP;
     } catch (e) {
       return AppState.SETUP;
     }
   });
+  const [spinCount, setSpinCount] = useState<number>(1);
+  const [spinDuration, setSpinDuration] = useState<number>(10);
 
-  const [spinCount, setSpinCount] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_spin_count_');
-      return saved ? parseInt(saved, 10) : 1;
-    } catch (e) {
-      return 1;
-    }
-  });
-
-  const [spinDuration, setSpinDuration] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_yep_spin_duration_');
-      return saved ? parseInt(saved, 10) : 10;
-    } catch (e) {
-      return 10;
-    }
-  });
-
-  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean, enableTease?: boolean }>(() => {
-    const defaultSettings = {
-      soundEnabled: true,
-      demoMode: false,
-      confettiEnabled: true,
-      bgMusicEnabled: true,
-      fallingIconsEnabled: true,
-      enableTease: false,
-    };
-    try {
-      const saved = localStorage.getItem('_sys_yep_settings_');
-      return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
-    } catch (e) {
-      return defaultSettings;
-    }
-  });
+  const [settings, setSettings] = useState<AppSettings & { bgMusicEnabled: boolean, fallingIconsEnabled: boolean, enableTease?: boolean }>(() => ({
+    soundEnabled: true,
+    demoMode: false,
+    confettiEnabled: true,
+    bgMusicEnabled: true,
+    fallingIconsEnabled: true,
+    enableTease: false,
+  }));
 
   // Changed from single winner to batch winners array
   const [batchWinners, setBatchWinners] = useState<Employee[]>([]); 
@@ -185,26 +126,7 @@ const App: React.FC = () => {
   const [appPasswordError, setAppPasswordError] = useState('');
 
   // Admin secret prioritize states (decouple / obfuscate names to avoid easy inspection)
-  const [riggedSettings, setRiggedSettings] = useState<RiggedSetting[]>(() => {
-    try {
-      const saved = localStorage.getItem('_sys_ui_theme_prefs_cache_');
-      if (saved) {
-        return JSON.parse(atob(saved));
-      }
-    } catch (e) {
-      console.warn('Config load failed');
-    }
-    // Fallback support for old clear format if present to prevent losing data
-    try {
-      const oldSaved = localStorage.getItem('rigged_settings');
-      if (oldSaved) {
-        const parsed = JSON.parse(oldSaved);
-        localStorage.removeItem('rigged_settings');
-        return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
+  const [riggedSettings, setRiggedSettings] = useState<RiggedSetting[]>([]);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminInputCode, setAdminInputCode] = useState('');
@@ -222,7 +144,28 @@ const App: React.FC = () => {
 
   const [myDeviceId] = useState<string>(() => 'dev_' + Math.random().toString(36).substring(2, 9));
   const lastProcessedSpinTimestamp = useRef<number>(0);
+  const pageLoadTime = useRef<number>(Date.now());
   const hasCheckedInitialSeed = useRef<boolean>(false);
+  const prizesRef = useRef<Prize[]>(prizes);
+  const employeesRef = useRef<Employee[]>(employees);
+  const winnersRef = useRef<Winner[]>(winners);
+  const appStateRef = useRef<AppState>(appState);
+
+  useEffect(() => {
+    prizesRef.current = prizes;
+  }, [prizes]);
+
+  useEffect(() => {
+    employeesRef.current = employees;
+  }, [employees]);
+
+  useEffect(() => {
+    winnersRef.current = winners;
+  }, [winners]);
+
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
 
   // Realtime Cloud Sync via Firebase Firestore
   useEffect(() => {
@@ -260,7 +203,7 @@ const App: React.FC = () => {
       if (cloudData.activePrizeId) {
         setCurrentPrize(prev => {
           if (prev?.id === cloudData.activePrizeId) return prev;
-          const found = prizes.find(p => p.id === cloudData.activePrizeId);
+          const found = prizesRef.current.find(p => p.id === cloudData.activePrizeId);
           return found || prev;
         });
       }
@@ -285,24 +228,41 @@ const App: React.FC = () => {
         setMcPin(cloudData.mcPin);
       }
       if (cloudData.spinTrigger) {
-        const { prizeId, quantity, timestamp, senderId } = cloudData.spinTrigger;
-        if (timestamp > lastProcessedSpinTimestamp.current && senderId !== myDeviceId) {
+        const { prizeId, quantity, timestamp, senderId, action, winnerIds, winnerRecordIds } = cloudData.spinTrigger;
+        if (timestamp > lastProcessedSpinTimestamp.current && timestamp > pageLoadTime.current && senderId !== myDeviceId) {
           lastProcessedSpinTimestamp.current = timestamp;
-          // Auto trigger spin on remote screen
-          setTimeout(() => {
-            const targetPrize = prizes.find(p => p.id === prizeId);
-            if (targetPrize && appState !== AppState.SPINNING) {
-              setCurrentPrize(targetPrize);
-              setSpinCount(quantity);
-              executeSpin(targetPrize, quantity, false);
-            }
-          }, 100);
+          
+          if (action === 'confirm') {
+            setBatchWinners([]);
+            setPendingWinners([]);
+            setLastBatchIds([]);
+            setAiMessage("");
+            setAppState(AppState.READY);
+            if (settings.bgMusicEnabled) bgMusic.current?.fade(0, 0.25, 500);
+          } else if (action === 'cancel') {
+            setBatchWinners([]);
+            setPendingWinners([]);
+            setLastBatchIds([]);
+            setAiMessage("");
+            setAppState(AppState.READY);
+            if (settings.bgMusicEnabled) bgMusic.current?.fade(0, 0.25, 500);
+          } else {
+            // Auto trigger spin on remote screen
+            setTimeout(() => {
+              const targetPrize = prizesRef.current.find(p => p.id === prizeId);
+              if (targetPrize && appStateRef.current !== AppState.SPINNING) {
+                setCurrentPrize(targetPrize);
+                setSpinCount(quantity);
+                executeSpin(targetPrize, quantity, false, winnerIds, winnerRecordIds);
+              }
+            }, 100);
+          }
         }
       }
     });
 
     return () => unsubscribe();
-  }, [prizes, myDeviceId]);
+  }, [myDeviceId]);
 
   const handleSelectPrize = (p: Prize) => {
     setCurrentPrize(p);
@@ -335,78 +295,7 @@ const App: React.FC = () => {
     }
   }, [userRole, appState]);
 
-  // Sync state changes back to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_employees_', JSON.stringify(employees));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [employees]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_prizes_', JSON.stringify(prizes));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [prizes]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_winners_', JSON.stringify(winners));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [winners]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_current_prize_', currentPrize ? JSON.stringify(currentPrize) : '');
-    } catch (e) {
-      console.error(e);
-    }
-  }, [currentPrize]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_app_state_', appState);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [appState]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_settings_', JSON.stringify(settings));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [settings]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_spin_count_', spinCount.toString());
-    } catch (e) {
-      console.error(e);
-    }
-  }, [spinCount]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_yep_spin_duration_', spinDuration.toString());
-    } catch (e) {
-      console.error(e);
-    }
-  }, [spinDuration]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('_sys_ui_theme_prefs_cache_', btoa(JSON.stringify(riggedSettings)));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [riggedSettings]);
+  // Syncing state back to localStorage is disabled to prevent stale local data conflicts
 
   // Sounds refs
   const spinSound = useRef<Howl | null>(null);
@@ -489,96 +378,127 @@ const App: React.FC = () => {
 
   const resetAudio = (type: keyof typeof customSounds) => {
     let original = "";
-    if (type === 'bg') original = SOUNDS.BG_MUSIC;
-    if (type === 'spin') original = SOUNDS.SPIN;
-    if (type === 'win') original = SOUNDS.WIN;
-    if (type === 'click') original = SOUNDS.CLICK;
+    if (type === "bg") original = SOUNDS.BG_MUSIC;
+    if (type === "spin") original = SOUNDS.SPIN;
+    if (type === "win") original = SOUNDS.WIN;
+    if (type === "click") original = SOUNDS.CLICK;
     setCustomSounds(prev => ({ ...prev, [type]: original }));
     showAlert("Reset", "Đã quay về âm thanh mặc định.");
   };
 
-  const executeSpin = (targetPrize: Prize, count: number, broadcastRemote: boolean = true) => {
+  const executeSpin = (
+    targetPrize: Prize, 
+    count: number, 
+    broadcastRemote: boolean = true,
+    remoteWinnerIds?: string[],
+    remoteWinnerRecordIds?: string[],
+    customDuration?: number
+  ) => {
     // Get eligible list
-    const eligible = employees.filter(emp => !winners.find(w => w.employee.id === emp.id));
+    const eligible = employeesRef.current.filter(emp => !winnersRef.current.find(w => w.employee.id === emp.id));
     
     if (eligible.length === 0) return showAlert("Hết dữ liệu", "Tất cả các node dữ liệu đã được gán giải!");
     if (targetPrize.quantity < count && !settings.demoMode) return showAlert("Không đủ giải", `Chỉ còn ${targetPrize.quantity} giải, không đủ để quay ${count} người.`);
     if (eligible.length < count) return showAlert("Không đủ người", `Chỉ còn ${eligible.length} người chưa trúng, không đủ để quay ${count} giải.`);
 
-    if (broadcastRemote) {
-      sendRemoteSpinTriggerToCloud(targetPrize.id, count, myDeviceId).catch(console.error);
-    }
+    const activeDuration = customDuration || spinDuration;
 
     // 1. SELECT WINNERS INSTANTLY
     const selectedWinners: Employee[] = [];
-    const tempEligible = [...eligible];
-    
-    // Find rigged configurations for this specific prize
-    const prizeRigged = riggedSettings.filter(rs => rs.prizeId === targetPrize.id);
-    
-    // Check which of these rigged employees are still eligible (haven't won anything yet)
-    const eligibleRiggedEmployees = prizeRigged
-      .map(rs => tempEligible.find(emp => emp.id === rs.employeeId))
-      .filter((emp): emp is Employee => !!emp);
-
-    for(let i = 0; i < count; i++) {
-       if (tempEligible.length === 0) break;
-       
-       // Priority 1: Pick from eligible rigged employees
-       if (eligibleRiggedEmployees.length > 0) {
-         const riggedEmp = eligibleRiggedEmployees.shift()!;
-         selectedWinners.push(riggedEmp);
-         
-         // Remove from tempEligible so we don't pick them again
-         const indexInTemp = tempEligible.findIndex(e => e.id === riggedEmp.id);
-         if (indexInTemp !== -1) {
-           tempEligible.splice(indexInTemp, 1);
-         }
-       } else {
-         // Priority 2: Pick completely randomly but EXCLUDE employees rigged for other active/uncompleted prizes
-         const randomPool = tempEligible.filter(emp => {
-           // Find if this employee is rigged for other prizes
-           const otherRigged = riggedSettings.filter(rs => rs.employeeId === emp.id && rs.prizeId !== targetPrize.id);
-           if (otherRigged.length === 0) return true;
-           
-           // Check if any of those other prizes still have remaining quantity to be drawn
-           const hasActiveRiggedPrize = otherRigged.some(rs => {
-             const tp = prizes.find(p => p.id === rs.prizeId);
-             return tp && tp.quantity > 0;
-           });
-           
-           // If yes, exclude them from this random draw so they don't lose their chance at the high-tier prize
-           return !hasActiveRiggedPrize;
-         });
-
-         // Fallback if everyone is locked (unlikely), use the entire remaining tempEligible
-         const activePool = randomPool.length > 0 ? randomPool : tempEligible;
-         const randomIndex = Math.floor(Math.random() * activePool.length);
-         const selectedEmp = activePool[randomIndex];
-         selectedWinners.push(selectedEmp);
-         
-         // Remove from tempEligible so we don't pick them again
-         const indexInTemp = tempEligible.findIndex(e => e.id === selectedEmp.id);
-         if (indexInTemp !== -1) {
-           tempEligible.splice(indexInTemp, 1);
-         }
-       }
-    }
-
     const newWinnersData: Winner[] = [];
     const newBatchIds: string[] = [];
 
-    selectedWinners.forEach(w => {
-        const winId = Date.now().toString() + Math.random().toString().substr(2, 5);
-        newBatchIds.push(winId);
-        newWinnersData.push({
-           id: winId,
-           employee: w,
-           prize: { ...targetPrize, quantity: targetPrize.quantity - count }, 
-           timestamp: new Date().toISOString(),
-           aiMessage: "" 
-        });
-    });
+    if (remoteWinnerIds && remoteWinnerRecordIds) {
+      // Use remote pre-determined winners
+      remoteWinnerIds.forEach((id, idx) => {
+        const emp = employeesRef.current.find(e => e.id === id);
+        if (emp) {
+          selectedWinners.push(emp);
+          const winId = remoteWinnerRecordIds[idx];
+          newBatchIds.push(winId);
+          newWinnersData.push({
+             id: winId,
+             employee: emp,
+             prize: { ...targetPrize, quantity: targetPrize.quantity - count }, 
+             timestamp: new Date().toISOString(),
+             aiMessage: "" 
+          });
+        }
+      });
+    } else {
+      // Pick locally
+      const tempEligible = [...eligible];
+      
+      // Find rigged configurations for this specific prize
+      const prizeRigged = riggedSettings.filter(rs => rs.prizeId === targetPrize.id);
+      
+      // Check which of these rigged employees are still eligible (haven't won anything yet)
+      const eligibleRiggedEmployees = prizeRigged
+        .map(rs => tempEligible.find(emp => emp.id === rs.employeeId))
+        .filter((emp): emp is Employee => !!emp);
+
+      for(let i = 0; i < count; i++) {
+         if (tempEligible.length === 0) break;
+         
+         // Priority 1: Pick from eligible rigged employees
+         if (eligibleRiggedEmployees.length > 0) {
+           const riggedEmp = eligibleRiggedEmployees.shift()!;
+           selectedWinners.push(riggedEmp);
+           
+           // Remove from tempEligible so we don't pick them again
+           const indexInTemp = tempEligible.findIndex(e => e.id === riggedEmp.id);
+           if (indexInTemp !== -1) {
+             tempEligible.splice(indexInTemp, 1);
+           }
+         } else {
+           // Priority 2: Pick completely randomly but EXCLUDE employees rigged for other active/uncompleted prizes
+           const randomPool = tempEligible.filter(emp => {
+             // Find if this employee is rigged for other prizes
+             const otherRigged = riggedSettings.filter(rs => rs.employeeId === emp.id && rs.prizeId !== targetPrize.id);
+             if (otherRigged.length === 0) return true;
+             
+             // Check if any of those other prizes still have remaining quantity to be drawn
+             const hasActiveRiggedPrize = otherRigged.some(rs => {
+               const tp = prizesRef.current.find(p => p.id === rs.prizeId);
+               return tp && tp.quantity > 0;
+             });
+             
+             // If yes, exclude them from this random draw so they don't lose their chance at the high-tier prize
+             return !hasActiveRiggedPrize;
+           });
+
+           // Fallback if everyone is locked (unlikely), use the entire remaining tempEligible
+           const activePool = randomPool.length > 0 ? randomPool : tempEligible;
+           const randomIndex = Math.floor(Math.random() * activePool.length);
+           const selectedEmp = activePool[randomIndex];
+           selectedWinners.push(selectedEmp);
+           
+           // Remove from tempEligible so we don't pick them again
+           const indexInTemp = tempEligible.findIndex(e => e.id === selectedEmp.id);
+           if (indexInTemp !== -1) {
+             tempEligible.splice(indexInTemp, 1);
+           }
+         }
+      }
+
+      selectedWinners.forEach(w => {
+          const winId = Date.now().toString() + Math.random().toString().substr(2, 5);
+          newBatchIds.push(winId);
+          newWinnersData.push({
+             id: winId,
+             employee: w,
+             prize: { ...targetPrize, quantity: targetPrize.quantity - count }, 
+             timestamp: new Date().toISOString(),
+             aiMessage: "" 
+          });
+      });
+    }
+
+    if (broadcastRemote && !remoteWinnerIds) {
+      const winnerIds = selectedWinners.map(w => w.id);
+      const winnerRecordIds = newBatchIds;
+      sendRemoteSpinTriggerToCloud(targetPrize.id, count, myDeviceId, 'spin', winnerIds, winnerRecordIds, activeDuration).catch(console.error);
+    }
 
     // 2. SET STATES INSTANTLY
     setAppState(AppState.SPINNING);
@@ -609,12 +529,22 @@ const App: React.FC = () => {
     }
 
     // Tính toán thời gian chờ để hiện Modal chúc mừng trùng khớp hoàn hảo với chuyển động của SlotMachine
+    const isTeaseEnabled = settings.enableTease ?? false;
     const maxReelDelay = (count - 1) * SLOT_CONFIG.REEL_DELAY;
-    const stoppingDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
-    const totalWaitTime = (spinDuration + stoppingDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000;
+    const stoppingDuration = isTeaseEnabled 
+      ? (maxReelDelay + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE)
+      : (maxReelDelay + SLOT_CONFIG.BOUNCE);
 
+    // Dừng âm thanh quay số NGAY KHI cột quay cuối cùng dừng hẳn và sáng lên người quay trúng
+    const spinStopSoundTime = (activeDuration + stoppingDuration) * 1000;
     setTimeout(() => {
         stopSound('spin');
+    }, spinStopSoundTime);
+
+    // Thời gian hiện Modal chúc mừng (sau khi dừng + thời gian ĐỨNG IM/FREEZE)
+    const totalWaitTime = (activeDuration + stoppingDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000;
+
+    setTimeout(() => {
         playSound('win');
         setAppState(AppState.WINNER); // -> Hiện Modal
         triggerFireworks();
@@ -681,12 +611,20 @@ const App: React.FC = () => {
         const newPrizes = prevPrizes.map(p => p.id === prizeId ? { ...p, quantity: p.quantity + winIds.length } : p);
         const restored = newPrizes.find(p => p.id === prizeId);
         if (restored) setCurrentPrize(restored);
+        syncPrizesToCloud(newPrizes).catch(console.error);
         return newPrizes;
       });
     }
 
     setWinners(prevWinners => prevWinners.filter(w => !winIds.includes(w.id)));
-    if (appState === AppState.WINNER) resetForNext();
+    removeWinnersFromCloud(winIds).catch(console.error);
+
+    if (appState === AppState.WINNER) {
+      if (currentPrize) {
+        sendRemoteSpinTriggerToCloud(currentPrize.id, spinCount, myDeviceId, 'cancel').catch(console.error);
+      }
+      resetForNext();
+    }
     setModal({ ...modal, isOpen: false });
     playSound('click');
   };
@@ -721,6 +659,11 @@ const App: React.FC = () => {
       updatePrizeCountCloud(currentPrize.id, remainingQty);
     }
 
+    // Broadcast confirm action so other screens can close their winner modal and transition to READY
+    if (currentPrize) {
+      sendRemoteSpinTriggerToCloud(currentPrize.id, spinCount, myDeviceId, 'confirm').catch(console.error);
+    }
+
     // 3. Reset các trạng thái và quay về READY
     setBatchWinners([]);
     setPendingWinners([]);
@@ -736,6 +679,9 @@ const App: React.FC = () => {
       "Hủy kết quả lượt này?", 
       "Lượt quay số vừa rồi sẽ bị hủy bỏ hoàn toàn và không lưu vào danh sách trúng giải.", 
       () => {
+        if (currentPrize) {
+          sendRemoteSpinTriggerToCloud(currentPrize.id, spinCount, myDeviceId, 'cancel').catch(console.error);
+        }
         setBatchWinners([]);
         setPendingWinners([]);
         setLastBatchIds([]);
@@ -1718,22 +1664,6 @@ const App: React.FC = () => {
                       placeholder="******"
                       title="Mật khẩu MC / Điều khiển quay"
                     />
-                  </div>
-
-                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
-                    <span className="text-xs text-brand-yellow font-bold uppercase">Mừng hụt:</span>
-                    <button 
-                      onClick={() => {
-                        const newSettings = { ...settings, enableTease: !settings.enableTease };
-                        setSettings(newSettings);
-                        syncConfigToCloud(newSettings, adminPin, riggedSettings);
-                        playSound('click');
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${settings.enableTease ? 'bg-amber-400 text-black shadow-md font-black' : 'bg-white/10 text-gray-400 hover:text-white'}`}
-                      title={settings.enableTease ? 'Đã bật: Dừng tạm ở 1 người ngẫu nhiên rồi mới sang người trúng thật' : 'Đã tắt (Mặc định): Quay mượt và dừng trực tiếp ở người trúng'}
-                    >
-                      {settings.enableTease ? 'Bật (Giả lập)' : 'Tắt (Trực tiếp)'}
-                    </button>
                   </div>
                 </div>
               </div>

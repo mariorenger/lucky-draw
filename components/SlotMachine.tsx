@@ -270,7 +270,7 @@ const Reel: React.FC<ReelProps> = ({
             isCancelled = true;
             controls.stop();
         };
-    }, [isSpinning, winner?.id, spinDuration, itemHeight, index, enableTease]);
+    }, [isSpinning, winner?.id, spinDuration, itemHeight, index, enableTease, candidates.length]);
 
     return (
         <div className="relative h-full overflow-hidden bg-gradient-to-b from-[#001d1b] via-[#002a28] to-[#001413] border-r-2 border-amber-500/30 last:border-r-0 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)]">
