@@ -12,7 +12,8 @@ import {
 } from 'firebase/firestore';
 import { Employee, Prize, Winner, Settings, RiggedSetting } from '../types';
 
-const rawConfig: Record<string, string> = {};
+import firebaseConfigFile from '../firebase-applet-config.json';
+const rawConfig = firebaseConfigFile || {};
 
 const activeFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawConfig.apiKey || '',
