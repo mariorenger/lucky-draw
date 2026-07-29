@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { AppState, Employee, Prize, Winner, Settings as AppSettings, RiggedSetting } from './types';
 import { Language, translations } from './services/languageService';
-import { SOUNDS, DEFAULT_FALLING_ICONS, SLOT_CONFIG } from './constants';
+import { SOUNDS, DEFAULT_FALLING_ICONS, SLOT_CONFIG, DEFAULT_EMPLOYEES, DEFAULT_PRIZES } from './constants';
 import * as ExcelService from './services/excelService';
 import * as GeminiService from './services/geminiService';
 import FileUpload from './components/FileUpload';
@@ -221,17 +221,53 @@ const App: React.FC = () => {
   // Realtime Cloud Sync via Firebase Firestore
   useEffect(() => {
     const unsubscribe = subscribeToCloudData((cloudData) => {
-      if (cloudData.employees && cloudData.employees.length > 0) {
-        setEmployees(cloudData.employees);
+      if (cloudData.employees !== undefined) {
+        if (cloudData.employees.length > 0) {
+          setEmployees(cloudData.employees);
+        } else {
+          // Firestore DB has no employees yet: check localStorage or seed default data
+          const saved = localStorage.getItem('_sys_yep_employees_');
+          let localEmps: Employee[] = [];
+          if (saved) {
+            try { localEmps = JSON.parse(saved); } catch (e) {}
+          }
+          if (localEmps.length > 0) {
+            setEmployees(localEmps);
+            syncEmployeesToCloud(localEmps).catch(console.error);
+          } else {
+            setEmployees(DEFAULT_EMPLOYEES);
+            syncEmployeesToCloud(DEFAULT_EMPLOYEES).catch(console.error);
+          }
+        }
       }
-      if (cloudData.prizes && cloudData.prizes.length > 0) {
-        setPrizes(cloudData.prizes);
-        setCurrentPrize(prev => {
-          if (!prev) return cloudData.prizes![0];
-          const match = cloudData.prizes!.find(p => p.id === prev.id);
-          return match || cloudData.prizes![0];
-        });
+
+      if (cloudData.prizes !== undefined) {
+        if (cloudData.prizes.length > 0) {
+          setPrizes(cloudData.prizes);
+          setCurrentPrize(prev => {
+            if (!prev) return cloudData.prizes![0];
+            const match = cloudData.prizes!.find(p => p.id === prev.id);
+            return match || cloudData.prizes![0];
+          });
+        } else {
+          // Firestore DB has no prizes yet: check localStorage or seed default data
+          const saved = localStorage.getItem('_sys_yep_prizes_');
+          let localPrizes: Prize[] = [];
+          if (saved) {
+            try { localPrizes = JSON.parse(saved); } catch (e) {}
+          }
+          if (localPrizes.length > 0) {
+            setPrizes(localPrizes);
+            if (!currentPrize) setCurrentPrize(localPrizes[0]);
+            syncPrizesToCloud(localPrizes).catch(console.error);
+          } else {
+            setPrizes(DEFAULT_PRIZES);
+            setCurrentPrize(DEFAULT_PRIZES[0]);
+            syncPrizesToCloud(DEFAULT_PRIZES).catch(console.error);
+          }
+        }
       }
+
       if (cloudData.winners !== undefined) {
         setWinners(cloudData.winners);
       }
@@ -252,14 +288,22 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Auto transition to READY for MC or when setup data exists
+  // Ensure currentPrize is set whenever prizes exist
   useEffect(() => {
-    if (userRole === 'MC' && appState === AppState.SETUP) {
-      setAppState(AppState.READY);
-    } else if (employees.length > 0 && prizes.length > 0 && appState === AppState.SETUP) {
-      setAppState(AppState.READY);
+    if (prizes.length > 0 && (!currentPrize || !prizes.some(p => p.id === currentPrize.id))) {
+      setCurrentPrize(prizes[0]);
     }
-  }, [userRole, employees.length, prizes.length, appState]);
+  }, [prizes, currentPrize]);
+
+  // Auto transition to READY for MC & unlock controls
+  useEffect(() => {
+    if (userRole === 'MC') {
+      setIsMcUnlocked(true);
+      if (appState === AppState.SETUP) {
+        setAppState(AppState.READY);
+      }
+    }
+  }, [userRole, appState]);
 
   // Sync state changes back to localStorage
   useEffect(() => {
@@ -897,6 +941,9 @@ const App: React.FC = () => {
       </div>
       
       <div className="flex justify-center gap-4 flex-wrap">
+          <button onClick={() => setAppState(AppState.READY)} className="px-6 py-3 bg-teal-500/30 text-teal-200 border border-teal-400/30 rounded-xl hover:bg-teal-500/50 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
+              <Sparkles className="w-5 h-5 text-brand-yellow" /> Vào Màn Quay Số
+          </button>
           <button onClick={() => setShowDataManager(true)} className="px-6 py-3 bg-white/10 text-white border border-white/20 rounded-xl hover:bg-white/20 hover:scale-105 transition flex items-center gap-3 font-bold uppercase tracking-wider">
               <Database className="w-5 h-5 text-brand-yellow" /> {t.manageData}
           </button>
@@ -1002,9 +1049,27 @@ const App: React.FC = () => {
 
               <div className="flex items-center gap-2 md:gap-3">
                   {userRole === 'MC' ? (
-                    <div className="px-3.5 py-1.5 bg-teal-500/20 text-teal-300 border border-teal-500/40 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm">
-                      <Sparkles className="w-4 h-4 text-brand-yellow animate-spin" />
-                      <span>MC / Sân Khấu Quay</span>
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1.5 bg-teal-500/20 text-teal-300 border border-teal-500/40 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm">
+                        <Sparkles className="w-4 h-4 text-brand-yellow animate-spin" />
+                        <span>MC / Sân Khấu Quay</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setIsAppUnlocked(false);
+                          setUserRole(null);
+                          sessionStorage.removeItem('_sys_user_role_');
+                          sessionStorage.removeItem('_sys_session_active_key');
+                          localStorage.removeItem('_sys_user_role_');
+                          localStorage.removeItem('_sys_session_active_key');
+                          playSound('click');
+                        }}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-xs font-bold transition border border-white/20 flex items-center gap-1.5 shadow-sm"
+                        title="Đổi vai trò hoặc Đăng nhập với quyền Admin"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-brand-yellow" />
+                        <span className="hidden sm:inline">Đổi Chế Độ</span>
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -1012,6 +1077,19 @@ const App: React.FC = () => {
                         <UserCheck className="w-4 h-4 text-amber-400" />
                         <span>Admin Hậu Trường</span>
                       </div>
+                      <button 
+                        onClick={() => {
+                          setUserRole('MC');
+                          sessionStorage.setItem('_sys_user_role_', 'MC');
+                          localStorage.setItem('_sys_user_role_', 'MC');
+                          playSound('click');
+                        }}
+                        className="px-3 py-1.5 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 rounded-full text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                        title="Chuyển sang màn hình MC (chỉ quay số, ẩn quản lý)"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-brand-yellow" />
+                        <span className="hidden sm:inline">Sang Màn MC</span>
+                      </button>
                       <button onClick={handleAdminClick} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title="Bàn điều khiển Admin & Cài đặt gài số"><Settings className="w-5 h-5" /></button>
                       <button onClick={() => setShowDataManager(true)} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title="Quản lý nhân viên & Giải thưởng"><Edit3 className="w-5 h-5" /></button>
                       <button 

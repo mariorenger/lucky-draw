@@ -10,11 +10,23 @@ import {
   writeBatch,
   deleteDoc 
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfigFile from '../firebase-applet-config.json';
 import { Employee, Prize, Winner, Settings, RiggedSetting } from '../types';
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+const rawConfig = firebaseConfigFile || {};
+
+const activeFirebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawConfig.apiKey || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || rawConfig.projectId || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || rawConfig.appId || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || rawConfig.authDomain || '',
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || rawConfig.firestoreDatabaseId || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || rawConfig.storageBucket || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || rawConfig.messagingSenderId || '',
+};
+
+const app = getApps().length === 0 ? initializeApp(activeFirebaseConfig) : getApps()[0];
+export const db = getFirestore(app, activeFirebaseConfig.firestoreDatabaseId || undefined);
 
 // Main Config Document Reference
 const CONFIG_DOC_PATH = doc(db, 'app_config', 'main');

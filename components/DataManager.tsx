@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Save, User, Gift, AlertCircle, Edit2, AlertTriangle } from 'lucide-react';
+import { X, Plus, Trash2, Save, User, Gift, AlertCircle, Edit2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Employee, Prize, Winner } from '../types';
+import { DEFAULT_EMPLOYEES, DEFAULT_PRIZES } from '../constants';
 
 interface DataManagerProps {
   employees: Employee[];
@@ -183,7 +184,7 @@ const DataManager: React.FC<DataManagerProps> = ({
       </div>
 
       {/* Toolbar */}
-      <div className="p-4 flex gap-3 bg-brand-emeraldDark/50 border-b border-white/5">
+      <div className="p-4 flex gap-3 flex-wrap bg-brand-emeraldDark/50 border-b border-white/5">
         <button onClick={addRow} className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-600/50 rounded-lg hover:bg-green-600 hover:text-white transition flex items-center gap-2 text-sm font-bold">
             <Plus className="w-4 h-4" /> Thêm dòng mới
         </button>
@@ -192,6 +193,19 @@ const DataManager: React.FC<DataManagerProps> = ({
               <Plus className="w-4 h-4" /> Thêm cột tùy ý
           </button>
         )}
+        <button 
+          onClick={() => {
+            if (activeTab === 'employees') {
+              setLocalEmployees(JSON.parse(JSON.stringify(DEFAULT_EMPLOYEES)));
+            } else {
+              setLocalPrizes(JSON.parse(JSON.stringify(DEFAULT_PRIZES)));
+            }
+          }}
+          className="px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg hover:bg-amber-500 hover:text-black transition flex items-center gap-2 text-sm font-bold ml-auto"
+          title="Nạp dữ liệu mẫu ban đầu"
+        >
+          <RefreshCw className="w-4 h-4" /> Nạp Dữ Liệu Mẫu
+        </button>
       </div>
 
       {/* Table Area */}

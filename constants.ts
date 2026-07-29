@@ -1,4 +1,25 @@
 // 
+export const DEFAULT_EMPLOYEES = [
+  { id: 'emp_1', name: 'Nguyễn Insight', email: 'insight.n@bidv.com.vn', department: 'Phân tích KH' },
+  { id: 'emp_2', name: 'Trần BigData', email: 'data.t@bidv.com.vn', department: 'Kỹ thuật Dữ liệu' },
+  { id: 'emp_3', name: 'Lê AI', email: 'ai.l@bidv.com.vn', department: 'Mô hình hóa' },
+  { id: 'emp_4', name: 'Phạm Dashboard', email: 'dash.p@bidv.com.vn', department: 'Quản trị Dữ liệu' },
+  { id: 'emp_5', name: 'Hoàng Machine Learning', email: 'ml.h@bidv.com.vn', department: 'Kỹ thuật AI' },
+  { id: 'emp_6', name: 'Đỗ Analytics', email: 'analytics.d@bidv.com.vn', department: 'Phân tích Kinh doanh' },
+  { id: 'emp_7', name: 'Vũ Cloud', email: 'cloud.v@bidv.com.vn', department: 'Hạ tầng Dữ liệu' },
+  { id: 'emp_8', name: 'Bùi Data Engineer', email: 'de.b@bidv.com.vn', department: 'Kỹ thuật Dữ liệu' },
+  { id: 'emp_9', name: 'Đặng Statistics', email: 'stat.d@bidv.com.vn', department: 'Thống kê' },
+  { id: 'emp_10', name: 'Trịnh Python', email: 'py.t@bidv.com.vn', department: 'Phát triển Mô hình' }
+];
+
+export const DEFAULT_PRIZES = [
+  { id: 'prz_1', name: 'GIẢI BIG DATA (Xe máy Vision)', originalQuantity: 1, quantity: 1 },
+  { id: 'prz_2', name: 'GIẢI INSIGHT (iPhone 15 Pro)', originalQuantity: 2, quantity: 2 },
+  { id: 'prz_3', name: 'GIẢI ANALYTICS (Máy tính bảng Samsung)', originalQuantity: 3, quantity: 3 },
+  { id: 'prz_4', name: 'GIẢI DATA DRIVEN (Voucher 2tr)', originalQuantity: 5, quantity: 5 },
+  { id: 'prz_5', name: 'GIẢI KẾT NỐI (Quà lưu niệm D&A)', originalQuantity: 10, quantity: 10 }
+];
+
 export const EXCEL_TEMPLATE_EMPLOYEE = [
   { "Tên": "Nguyễn Insight", "Email": "insight.n@bidv.com.vn", "Phòng ban": "Phân tích KH" },
   { "Tên": "Trần BigData", "Email": "data.t@bidv.com.vn", "Phòng ban": "Kỹ thuật Dữ liệu" },
