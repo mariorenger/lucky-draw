@@ -165,6 +165,16 @@ const App: React.FC = () => {
   const [aiMessage, setAiMessage] = useState<string>("");
   const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
  
+  // Active role state: 'MC' (directly to stage spin view) or 'ADMIN' (full management + spin view)
+  const [userRole, setUserRole] = useState<'MC' | 'ADMIN' | null>(() => {
+    const saved = sessionStorage.getItem('_sys_user_role_') || localStorage.getItem('_sys_user_role_');
+    if (saved === 'MC' || saved === 'ADMIN') return saved as 'MC' | 'ADMIN';
+    if (sessionStorage.getItem('_sys_session_active_key') === 'true' || localStorage.getItem('_sys_session_active_key') === 'true') {
+      return 'ADMIN';
+    }
+    return null;
+  });
+
   // Global password lock state (Admin: hannn2, MC: hannn13)
   const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
     return sessionStorage.getItem('_sys_session_active_key') === 'true' || localStorage.getItem('_sys_session_active_key') === 'true';
@@ -242,12 +252,14 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Auto transition to READY when setup data exists
+  // Auto transition to READY for MC or when setup data exists
   useEffect(() => {
-    if (employees.length > 0 && prizes.length > 0 && appState === AppState.SETUP) {
+    if (userRole === 'MC' && appState === AppState.SETUP) {
+      setAppState(AppState.READY);
+    } else if (employees.length > 0 && prizes.length > 0 && appState === AppState.SETUP) {
       setAppState(AppState.READY);
     }
-  }, [employees.length, prizes.length]);
+  }, [userRole, employees.length, prizes.length, appState]);
 
   // Sync state changes back to localStorage
   useEffect(() => {
@@ -751,23 +763,39 @@ const App: React.FC = () => {
       playSound('click');
       startSpin();
     } else {
-      setMcError('Mật khẩu MC không đúng! Vui lòng nhập hannn13');
+      setMcError('Mật khẩu không chính xác! Vui lòng thử lại.');
     }
   };
 
   const handleAppUnlockSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isCorrectAdminPassword(appPasswordInput) || isCorrectMcPassword(appPasswordInput)) {
+    if (isCorrectAdminPassword(appPasswordInput)) {
+      setUserRole('ADMIN');
       setIsAppUnlocked(true);
       setIsMcUnlocked(true);
       sessionStorage.setItem('_sys_session_active_key', 'true');
       sessionStorage.setItem('_sys_mc_unlocked_session_', 'true');
+      sessionStorage.setItem('_sys_user_role_', 'ADMIN');
       localStorage.setItem('_sys_session_active_key', 'true');
       localStorage.setItem('_sys_mc_unlocked_session_', 'true');
+      localStorage.setItem('_sys_user_role_', 'ADMIN');
+      setAppPasswordError('');
+      playSound('click');
+    } else if (isCorrectMcPassword(appPasswordInput)) {
+      setUserRole('MC');
+      setIsAppUnlocked(true);
+      setIsMcUnlocked(true);
+      sessionStorage.setItem('_sys_session_active_key', 'true');
+      sessionStorage.setItem('_sys_mc_unlocked_session_', 'true');
+      sessionStorage.setItem('_sys_user_role_', 'MC');
+      localStorage.setItem('_sys_session_active_key', 'true');
+      localStorage.setItem('_sys_mc_unlocked_session_', 'true');
+      localStorage.setItem('_sys_user_role_', 'MC');
+      setAppState(AppState.READY);
       setAppPasswordError('');
       playSound('click');
     } else {
-      setAppPasswordError('Mật khẩu không đúng! (MC: hannn13, Admin: hannn2)');
+      setAppPasswordError('Mật khẩu không chính xác! Vui lòng thử lại.');
     }
   };
 
@@ -800,7 +828,7 @@ const App: React.FC = () => {
       setAdminError('');
       playSound('click');
     } else {
-      setAdminError('Mã khóa Admin không chính xác! (Admin: hannn2)');
+      setAdminError('Mã khóa Admin không chính xác! Vui lòng thử lại.');
     }
   };
 
@@ -973,40 +1001,37 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 md:gap-3">
-                  <button
-                    onClick={() => {
-                      const next = !isMcUnlocked;
-                      setIsMcUnlocked(next);
-                      localStorage.setItem('_sys_mc_unlocked_session_', next.toString());
-                      if (!next) {
-                        showAlert("Đã khóa quyền MC", "Lượt quay tiếp theo sẽ yêu cầu nhập mật khẩu MC (hannn13).");
-                      }
-                      playSound('click');
-                    }}
-                    className={`px-3 py-2 rounded-full text-xs font-bold border transition flex items-center gap-1.5 ${isMcUnlocked ? 'bg-green-500/20 text-green-300 border-green-500/40 hover:bg-green-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'}`}
-                    title={isMcUnlocked ? 'Quyền MC đang mở. Bấm để khóa lại' : 'Đang khóa quyền quay. Yêu cầu nhập MK MC (hannn13)'}
-                  >
-                    <Lock className="w-4 h-4" />
-                    <span className="hidden sm:inline">{isMcUnlocked ? 'MC: Đã Mở' : 'Khóa Quay MC'}</span>
-                  </button>
-                  <button onClick={handleAdminClick} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.prizeStructure}><Settings className="w-5 h-5" /></button>
-                  <button onClick={() => setShowDataManager(true)} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.manageData}><Edit3 className="w-5 h-5" /></button>
-                  {/* REMOVED SETTINGS BUTTON HERE */}
-                  <button 
-                      onClick={() => showConfirm(
-                          t.backToSetupConfirmTitle, 
-                          t.backToSetupConfirmMsg, 
-                          () => {
-                              setBatchWinners([]); // Clear current winners
-                              setLastBatchIds([]);
-                              setAiMessage("");
-                              setAppState(AppState.SETUP);
-                          }
-                      )} 
-                      className="p-2.5 md:p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10 hover:bg-red-500/20 transition"
-                  >
-                      <RotateCcw className="w-5 h-5" />
-                  </button>
+                  {userRole === 'MC' ? (
+                    <div className="px-3.5 py-1.5 bg-teal-500/20 text-teal-300 border border-teal-500/40 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm">
+                      <Sparkles className="w-4 h-4 text-brand-yellow animate-spin" />
+                      <span>MC / Sân Khấu Quay</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-3 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm hidden sm:flex">
+                        <UserCheck className="w-4 h-4 text-amber-400" />
+                        <span>Admin Hậu Trường</span>
+                      </div>
+                      <button onClick={handleAdminClick} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title="Bàn điều khiển Admin & Cài đặt gài số"><Settings className="w-5 h-5" /></button>
+                      <button onClick={() => setShowDataManager(true)} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title="Quản lý nhân viên & Giải thưởng"><Edit3 className="w-5 h-5" /></button>
+                      <button 
+                          onClick={() => showConfirm(
+                              t.backToSetupConfirmTitle, 
+                              t.backToSetupConfirmMsg, 
+                              () => {
+                                  setBatchWinners([]); // Clear current winners
+                                  setLastBatchIds([]);
+                                  setAiMessage("");
+                                  setAppState(AppState.SETUP);
+                              }
+                          )} 
+                          className="p-2.5 md:p-3 bg-red-500/10 rounded-full text-red-400 border border-red-500/10 hover:bg-red-500/20 transition"
+                          title="Trở về trang cấu hình ban đầu"
+                      >
+                          <RotateCcw className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
               </div>
             </div>
 
@@ -1338,15 +1363,18 @@ const App: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Quick Lock Button */}
+          {/* Quick Lock / Logout Button */}
           <button 
             onClick={() => {
               setIsAppUnlocked(false);
               setIsMcUnlocked(false);
+              setUserRole(null);
               sessionStorage.removeItem('_sys_session_active_key');
               sessionStorage.removeItem('_sys_mc_unlocked_session_');
+              sessionStorage.removeItem('_sys_user_role_');
               localStorage.removeItem('_sys_session_active_key');
               localStorage.removeItem('_sys_mc_unlocked_session_');
+              localStorage.removeItem('_sys_user_role_');
               playSound('click');
             }}
             className="absolute top-4 right-4 z-[90] p-2 bg-black/30 border border-white/10 text-gray-400 hover:text-red-400 hover:border-red-500/30 rounded-xl transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
@@ -1415,13 +1443,13 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-2xl font-black text-white uppercase tracking-wider font-display">Mật Khẩu MC Điều Khiển</h2>
-                <p className="text-teal-100/80 text-xs mt-1">Nhập mật khẩu người điều khiển quay (MC: <span className="text-brand-yellow font-bold font-mono">hannn13</span>) để kích hoạt lượt quay.</p>
+                <p className="text-teal-100/80 text-xs mt-1">Nhập mật khẩu người điều khiển quay để kích hoạt lượt quay.</p>
               </div>
 
               <form onSubmit={handleMcLoginSubmit} className="w-full mt-2 space-y-4">
                 <input 
                   type="password" 
-                  placeholder="Nhập mật khẩu MC (hannn13)..." 
+                  placeholder="Nhập mật khẩu MC..." 
                   value={mcInputCode}
                   onChange={(e) => setMcInputCode(e.target.value)}
                   className="w-full p-4 bg-black/50 border-2 border-brand-yellow/30 rounded-xl text-center text-white focus:outline-none focus:border-brand-yellow font-mono text-xl placeholder:text-gray-500"
@@ -1551,7 +1579,7 @@ const App: React.FC = () => {
                     <Key className="w-3.5 h-3.5 text-brand-yellow" />
                     <span className="text-xs text-brand-yellow font-bold uppercase">MK Admin:</span>
                     <input 
-                      type="text"
+                      type="password"
                       value={adminPin}
                       onChange={(e) => {
                         const newPin = e.target.value;
@@ -1559,7 +1587,7 @@ const App: React.FC = () => {
                         syncConfigToCloud(settings, newPin, riggedSettings, mcPin);
                       }}
                       className="w-24 px-2 py-0.5 bg-black/50 border border-brand-yellow/30 rounded text-xs text-white text-center font-mono focus:outline-none focus:border-brand-yellow"
-                      placeholder="hannn2"
+                      placeholder="******"
                       title="Mật khẩu Admin quản trị"
                     />
                   </div>
@@ -1568,7 +1596,7 @@ const App: React.FC = () => {
                     <Lock className="w-3.5 h-3.5 text-brand-yellow" />
                     <span className="text-xs text-brand-yellow font-bold uppercase">MK MC Quay:</span>
                     <input 
-                      type="text"
+                      type="password"
                       value={mcPin}
                       onChange={(e) => {
                         const newMc = e.target.value;
@@ -1576,7 +1604,7 @@ const App: React.FC = () => {
                         syncConfigToCloud(settings, adminPin, riggedSettings, newMc);
                       }}
                       className="w-24 px-2 py-0.5 bg-black/50 border border-brand-yellow/30 rounded text-xs text-white text-center font-mono focus:outline-none focus:border-brand-yellow"
-                      placeholder="hannn13"
+                      placeholder="******"
                       title="Mật khẩu MC / Điều khiển quay"
                     />
                   </div>
