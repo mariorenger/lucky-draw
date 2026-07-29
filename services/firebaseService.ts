@@ -38,6 +38,8 @@ export interface AppDataSync {
   riggedSettings: RiggedSetting[];
   adminPin: string;
   mcPin: string;
+  activePrizeId?: string;
+  activeSpinCount?: number;
   spinTrigger?: {
     prizeId: string;
     quantity: number;
@@ -64,6 +66,8 @@ export function subscribeToCloudData(
         adminPin: data.adminPin || DEFAULT_ADMIN_PIN,
         mcPin: data.mcPin || DEFAULT_MC_PIN,
         riggedSettings: data.riggedSettings || [],
+        activePrizeId: data.activePrizeId || undefined,
+        activeSpinCount: data.activeSpinCount || undefined,
         spinTrigger: data.spinTrigger || null
       });
     } else {
@@ -211,6 +215,18 @@ export async function syncConfigToCloud(settings: Settings, adminPin: string, ri
     }, { merge: true });
   } catch (err) {
     console.error('Error syncing config to Firestore:', err);
+  }
+}
+
+// Sync Active Prize and Spin Count Selection to Cloud
+export async function syncActivePrizeAndCountToCloud(activePrizeId: string, activeSpinCount: number) {
+  try {
+    await setDoc(CONFIG_DOC_PATH, {
+      activePrizeId,
+      activeSpinCount
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error syncing active prize and count:', err);
   }
 }
 

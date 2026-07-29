@@ -27,6 +27,7 @@ import {
   updatePrizeCountCloud, 
   clearWinnersInCloud, 
   syncConfigToCloud,
+  syncActivePrizeAndCountToCloud,
   sendRemoteSpinTriggerToCloud
 } from './services/firebaseService';
 
@@ -221,6 +222,7 @@ const App: React.FC = () => {
 
   const [myDeviceId] = useState<string>(() => 'dev_' + Math.random().toString(36).substring(2, 9));
   const lastProcessedSpinTimestamp = useRef<number>(0);
+  const hasCheckedInitialSeed = useRef<boolean>(false);
 
   // Realtime Cloud Sync via Firebase Firestore
   useEffect(() => {
@@ -228,20 +230,11 @@ const App: React.FC = () => {
       if (cloudData.employees !== undefined) {
         if (cloudData.employees.length > 0) {
           setEmployees(cloudData.employees);
+        } else if (!hasCheckedInitialSeed.current) {
+          setEmployees(DEFAULT_EMPLOYEES);
+          syncEmployeesToCloud(DEFAULT_EMPLOYEES).catch(console.error);
         } else {
-          // Firestore DB has no employees yet: check localStorage or seed default data
-          const saved = localStorage.getItem('_sys_yep_employees_');
-          let localEmps: Employee[] = [];
-          if (saved) {
-            try { localEmps = JSON.parse(saved); } catch (e) {}
-          }
-          if (localEmps.length > 0) {
-            setEmployees(localEmps);
-            syncEmployeesToCloud(localEmps).catch(console.error);
-          } else {
-            setEmployees(DEFAULT_EMPLOYEES);
-            syncEmployeesToCloud(DEFAULT_EMPLOYEES).catch(console.error);
-          }
+          setEmployees([]);
         }
       }
 
@@ -253,23 +246,27 @@ const App: React.FC = () => {
             const match = cloudData.prizes!.find(p => p.id === prev.id);
             return match || cloudData.prizes![0];
           });
+        } else if (!hasCheckedInitialSeed.current) {
+          setPrizes(DEFAULT_PRIZES);
+          setCurrentPrize(DEFAULT_PRIZES[0]);
+          syncPrizesToCloud(DEFAULT_PRIZES).catch(console.error);
         } else {
-          // Firestore DB has no prizes yet: check localStorage or seed default data
-          const saved = localStorage.getItem('_sys_yep_prizes_');
-          let localPrizes: Prize[] = [];
-          if (saved) {
-            try { localPrizes = JSON.parse(saved); } catch (e) {}
-          }
-          if (localPrizes.length > 0) {
-            setPrizes(localPrizes);
-            if (!currentPrize) setCurrentPrize(localPrizes[0]);
-            syncPrizesToCloud(localPrizes).catch(console.error);
-          } else {
-            setPrizes(DEFAULT_PRIZES);
-            setCurrentPrize(DEFAULT_PRIZES[0]);
-            syncPrizesToCloud(DEFAULT_PRIZES).catch(console.error);
-          }
+          setPrizes([]);
         }
+      }
+
+      hasCheckedInitialSeed.current = true;
+
+      if (cloudData.activePrizeId) {
+        setCurrentPrize(prev => {
+          if (prev?.id === cloudData.activePrizeId) return prev;
+          const found = prizes.find(p => p.id === cloudData.activePrizeId);
+          return found || prev;
+        });
+      }
+
+      if (cloudData.activeSpinCount !== undefined && cloudData.activeSpinCount > 0) {
+        setSpinCount(cloudData.activeSpinCount);
       }
 
       if (cloudData.winners !== undefined) {
@@ -306,6 +303,20 @@ const App: React.FC = () => {
 
     return () => unsubscribe();
   }, [prizes, myDeviceId]);
+
+  const handleSelectPrize = (p: Prize) => {
+    setCurrentPrize(p);
+    playSound('click');
+    syncActivePrizeAndCountToCloud(p.id, spinCount).catch(console.error);
+  };
+
+  const handleUpdateSpinCount = (newCount: number) => {
+    setSpinCount(newCount);
+    playSound('click');
+    if (currentPrize) {
+      syncActivePrizeAndCountToCloud(currentPrize.id, newCount).catch(console.error);
+    }
+  };
 
   // Ensure currentPrize is set whenever prizes exist
   useEffect(() => {
@@ -1158,7 +1169,7 @@ const App: React.FC = () => {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 animate-fade-in">
                 {prizes.map(p => (
-                  <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => { setCurrentPrize(p); playSound('click'); }} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
+                  <button key={p.id} disabled={appState === AppState.SPINNING} onClick={() => handleSelectPrize(p)} className={`relative p-4 rounded-2xl border-2 transition-all text-left min-h-[110px] flex flex-col justify-between ${currentPrize?.id === p.id ? 'border-brand-yellow bg-brand-yellow/10 shadow-[0_0_15px_rgba(255,198,47,0.15)]' : 'border-white/5 bg-white/5 hover:bg-white/10'} ${p.quantity === 0 ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}>
                     <p className="font-bold text-xs md:text-sm leading-tight text-white line-clamp-2 mb-2">{p.name}</p>
                     <div>
                       <span className="text-[10px] md:text-xs font-mono text-teal-100 bg-black/20 px-2.5 py-0.5 rounded-full">{t.remaining} {p.quantity}</span>
@@ -1196,10 +1207,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3 bg-black/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-amber-400/40 shadow-[0_10px_25px_rgba(0,0,0,0.8)]">
                   <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
                       <button 
-                        onClick={() => {
-                          setSpinCount(Math.max(1, spinCount - 1));
-                          playSound('click');
-                        }} 
+                        onClick={() => handleUpdateSpinCount(Math.max(1, spinCount - 1))} 
                         className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
                         title="Giảm số người quay"
                       >
@@ -1212,8 +1220,7 @@ const App: React.FC = () => {
                       <button 
                         onClick={() => {
                             const max = settings.demoMode ? 100 : (currentPrize?.quantity || 1);
-                            setSpinCount(Math.min(max, spinCount + 1));
-                            playSound('click');
+                            handleUpdateSpinCount(Math.min(max, spinCount + 1));
                         }} 
                         className="w-8 h-8 flex items-center justify-center text-amber-300 hover:bg-white/20 active:scale-90 rounded-lg transition font-bold"
                         title="Tăng số người quay"
@@ -1667,9 +1674,9 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
                     <span className="text-xs text-brand-yellow font-bold uppercase">Số người/lượt:</span>
-                    <button onClick={() => setSpinCount(Math.max(1, spinCount - 1))} className="p-1 hover:bg-white/10 rounded"><Minus className="w-3.5 h-3.5 text-white" /></button>
+                    <button onClick={() => handleUpdateSpinCount(Math.max(1, spinCount - 1))} className="p-1 hover:bg-white/10 rounded"><Minus className="w-3.5 h-3.5 text-white" /></button>
                     <span className="font-bold text-sm text-white px-1">{spinCount}</span>
-                    <button onClick={() => setSpinCount(Math.min(50, spinCount + 1))} className="p-1 hover:bg-white/10 rounded"><Plus className="w-3.5 h-3.5 text-white" /></button>
+                    <button onClick={() => handleUpdateSpinCount(Math.min(50, spinCount + 1))} className="p-1 hover:bg-white/10 rounded"><Plus className="w-3.5 h-3.5 text-white" /></button>
                   </div>
 
                   <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
