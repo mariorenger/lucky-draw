@@ -26,7 +26,8 @@ import {
   addWinnersToCloud, 
   updatePrizeCountCloud, 
   clearWinnersInCloud, 
-  syncConfigToCloud 
+  syncConfigToCloud,
+  sendRemoteSpinTriggerToCloud
 } from './services/firebaseService';
 
 interface ModalConfig {
@@ -218,6 +219,9 @@ const App: React.FC = () => {
   const [mcInputCode, setMcInputCode] = useState<string>('');
   const [mcError, setMcError] = useState<string>('');
 
+  const [myDeviceId] = useState<string>(() => 'dev_' + Math.random().toString(36).substring(2, 9));
+  const lastProcessedSpinTimestamp = useRef<number>(0);
+
   // Realtime Cloud Sync via Firebase Firestore
   useEffect(() => {
     const unsubscribe = subscribeToCloudData((cloudData) => {
@@ -283,10 +287,25 @@ const App: React.FC = () => {
       if (cloudData.mcPin !== undefined && cloudData.mcPin) {
         setMcPin(cloudData.mcPin);
       }
+      if (cloudData.spinTrigger) {
+        const { prizeId, quantity, timestamp, senderId } = cloudData.spinTrigger;
+        if (timestamp > lastProcessedSpinTimestamp.current && senderId !== myDeviceId) {
+          lastProcessedSpinTimestamp.current = timestamp;
+          // Auto trigger spin on remote screen
+          setTimeout(() => {
+            const targetPrize = prizes.find(p => p.id === prizeId);
+            if (targetPrize && appState !== AppState.SPINNING) {
+              setCurrentPrize(targetPrize);
+              setSpinCount(quantity);
+              executeSpin(targetPrize, quantity, false);
+            }
+          }, 100);
+        }
+      }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [prizes, myDeviceId]);
 
   // Ensure currentPrize is set whenever prizes exist
   useEffect(() => {
@@ -467,29 +486,31 @@ const App: React.FC = () => {
     showAlert("Reset", "Đã quay về âm thanh mặc định.");
   };
 
-  const startSpin = () => {
-    if (!currentPrize) return showAlert("Cảnh báo", "Vui lòng chọn Giải thưởng Insight cần trao!");
-    
+  const executeSpin = (targetPrize: Prize, count: number, broadcastRemote: boolean = true) => {
     // Get eligible list
     const eligible = employees.filter(emp => !winners.find(w => w.employee.id === emp.id));
     
     if (eligible.length === 0) return showAlert("Hết dữ liệu", "Tất cả các node dữ liệu đã được gán giải!");
-    if (currentPrize.quantity < spinCount && !settings.demoMode) return showAlert("Không đủ giải", `Chỉ còn ${currentPrize.quantity} giải, không đủ để quay ${spinCount} người.`);
-    if (eligible.length < spinCount) return showAlert("Không đủ người", `Chỉ còn ${eligible.length} người chưa trúng, không đủ để quay ${spinCount} giải.`);
+    if (targetPrize.quantity < count && !settings.demoMode) return showAlert("Không đủ giải", `Chỉ còn ${targetPrize.quantity} giải, không đủ để quay ${count} người.`);
+    if (eligible.length < count) return showAlert("Không đủ người", `Chỉ còn ${eligible.length} người chưa trúng, không đủ để quay ${count} giải.`);
+
+    if (broadcastRemote) {
+      sendRemoteSpinTriggerToCloud(targetPrize.id, count, myDeviceId).catch(console.error);
+    }
 
     // 1. SELECT WINNERS INSTANTLY
     const selectedWinners: Employee[] = [];
     const tempEligible = [...eligible];
     
     // Find rigged configurations for this specific prize
-    const prizeRigged = riggedSettings.filter(rs => rs.prizeId === currentPrize.id);
+    const prizeRigged = riggedSettings.filter(rs => rs.prizeId === targetPrize.id);
     
     // Check which of these rigged employees are still eligible (haven't won anything yet)
     const eligibleRiggedEmployees = prizeRigged
       .map(rs => tempEligible.find(emp => emp.id === rs.employeeId))
       .filter((emp): emp is Employee => !!emp);
 
-    for(let i = 0; i < spinCount; i++) {
+    for(let i = 0; i < count; i++) {
        if (tempEligible.length === 0) break;
        
        // Priority 1: Pick from eligible rigged employees
@@ -506,13 +527,13 @@ const App: React.FC = () => {
          // Priority 2: Pick completely randomly but EXCLUDE employees rigged for other active/uncompleted prizes
          const randomPool = tempEligible.filter(emp => {
            // Find if this employee is rigged for other prizes
-           const otherRigged = riggedSettings.filter(rs => rs.employeeId === emp.id && rs.prizeId !== currentPrize.id);
+           const otherRigged = riggedSettings.filter(rs => rs.employeeId === emp.id && rs.prizeId !== targetPrize.id);
            if (otherRigged.length === 0) return true;
            
            // Check if any of those other prizes still have remaining quantity to be drawn
            const hasActiveRiggedPrize = otherRigged.some(rs => {
-             const targetPrize = prizes.find(p => p.id === rs.prizeId);
-             return targetPrize && targetPrize.quantity > 0;
+             const tp = prizes.find(p => p.id === rs.prizeId);
+             return tp && tp.quantity > 0;
            });
            
            // If yes, exclude them from this random draw so they don't lose their chance at the high-tier prize
@@ -542,7 +563,7 @@ const App: React.FC = () => {
         newWinnersData.push({
            id: winId,
            employee: w,
-           prize: { ...currentPrize, quantity: currentPrize.quantity - spinCount }, 
+           prize: { ...targetPrize, quantity: targetPrize.quantity - count }, 
            timestamp: new Date().toISOString(),
            aiMessage: "" 
         });
@@ -560,7 +581,7 @@ const App: React.FC = () => {
     // AI Generation starts immediately in background
     setAiLoading(true);
     if (selectedWinners.length === 1) {
-        GeminiService.generateCongratulation(selectedWinners[0], currentPrize.name, lang)
+        GeminiService.generateCongratulation(selectedWinners[0], targetPrize.name, lang)
           .then(msg => {
               setAiMessage(msg);
               setAiLoading(false);
@@ -568,16 +589,16 @@ const App: React.FC = () => {
           });
     } else {
         const defaultMultiMsg = lang === 'vi' 
-          ? `Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${currentPrize.name}!` 
+          ? `Chúc mừng ${selectedWinners.length} thành viên xuất sắc đã nhận giải ${targetPrize.name}!` 
           : lang === 'en' 
-            ? `Congratulations to the ${selectedWinners.length} outstanding members on winning the ${currentPrize.name}!` 
-            : `${currentPrize.name} ကို ရရှိသွားသော ကံထူးရှင် ${selectedWinners.length} ဦးလုံးကို အထူးပင် ဂုဏ်ယူဝမ်းမြောက်ပါသည်!`;
+            ? `Congratulations to the ${selectedWinners.length} outstanding members on winning the ${targetPrize.name}!` 
+            : `${targetPrize.name} ကို ရရှိသွားသော ကံထူးရှင် ${selectedWinners.length} ဦးလုံးကို အထူးပင် ဂုဏ်ယူဝမ်းမြောက်ပါသည်!`;
         setAiMessage(defaultMultiMsg);
         setAiLoading(false);
     }
 
     // Tính toán thời gian chờ để hiện Modal chúc mừng trùng khớp hoàn hảo với chuyển động của SlotMachine
-    const maxReelDelay = (spinCount - 1) * SLOT_CONFIG.REEL_DELAY;
+    const maxReelDelay = (count - 1) * SLOT_CONFIG.REEL_DELAY;
     const stoppingDuration = maxReelDelay + SLOT_CONFIG.DECEL_DURATION + SLOT_CONFIG.TEASE_PAUSE + SLOT_CONFIG.WINNER_MOVE + SLOT_CONFIG.BOUNCE;
     const totalWaitTime = (spinDuration + stoppingDuration + SLOT_CONFIG.FREEZE_TIME + SLOT_CONFIG.SAFETY_BUFFER) * 1000;
 
@@ -587,6 +608,11 @@ const App: React.FC = () => {
         setAppState(AppState.WINNER); // -> Hiện Modal
         triggerFireworks();
     }, totalWaitTime);
+  };
+
+  const startSpin = () => {
+    if (!currentPrize) return showAlert("Cảnh báo", "Vui lòng chọn Giải thưởng Insight cần trao!");
+    executeSpin(currentPrize, spinCount, true);
   };
 
   const triggerFireworks = () => {

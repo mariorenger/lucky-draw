@@ -10,10 +10,9 @@ import {
   writeBatch,
   deleteDoc 
 } from 'firebase/firestore';
-import firebaseConfigFile from '../firebase-applet-config.json';
 import { Employee, Prize, Winner, Settings, RiggedSetting } from '../types';
 
-const rawConfig = firebaseConfigFile || {};
+const rawConfig: Record<string, string> = {};
 
 const activeFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || rawConfig.apiKey || '',
@@ -39,6 +38,12 @@ export interface AppDataSync {
   riggedSettings: RiggedSetting[];
   adminPin: string;
   mcPin: string;
+  spinTrigger?: {
+    prizeId: string;
+    quantity: number;
+    timestamp: number;
+    senderId: string;
+  } | null;
 }
 
 // Default Admin and MC PINs
@@ -58,7 +63,8 @@ export function subscribeToCloudData(
         settings: data.settings || undefined,
         adminPin: data.adminPin || DEFAULT_ADMIN_PIN,
         mcPin: data.mcPin || DEFAULT_MC_PIN,
-        riggedSettings: data.riggedSettings || []
+        riggedSettings: data.riggedSettings || [],
+        spinTrigger: data.spinTrigger || null
       });
     } else {
       // Initialize config if missing
@@ -207,3 +213,20 @@ export async function syncConfigToCloud(settings: Settings, adminPin: string, ri
     console.error('Error syncing config to Firestore:', err);
   }
 }
+
+// Send Remote Spin Trigger to Cloud
+export async function sendRemoteSpinTriggerToCloud(prizeId: string, quantity: number, senderId: string) {
+  try {
+    await setDoc(CONFIG_DOC_PATH, {
+      spinTrigger: {
+        prizeId,
+        quantity,
+        timestamp: Date.now(),
+        senderId
+      }
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error sending remote spin trigger:', err);
+  }
+}
+
