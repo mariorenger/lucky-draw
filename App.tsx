@@ -19,6 +19,15 @@ import FileUpload from './components/FileUpload';
 import SlotMachine from './components/SlotMachine';
 import FallingIcons from './components/FallingIcons';
 import DataManager from './components/DataManager';
+import { 
+  subscribeToCloudData, 
+  syncEmployeesToCloud, 
+  syncPrizesToCloud, 
+  addWinnersToCloud, 
+  updatePrizeCountCloud, 
+  clearWinnersInCloud, 
+  syncConfigToCloud 
+} from './services/firebaseService';
 
 interface ModalConfig {
   isOpen: boolean;
@@ -156,9 +165,9 @@ const App: React.FC = () => {
   const [aiMessage, setAiMessage] = useState<string>("");
   const [lastBatchIds, setLastBatchIds] = useState<string[]>([]); // Track IDs for reroll
  
-  // Global password lock state (hannn2)
+  // Global password lock state (Admin: hannn2, MC: hannn13)
   const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
-    return localStorage.getItem('_sys_session_active_key') === 'true';
+    return sessionStorage.getItem('_sys_session_active_key') === 'true' || localStorage.getItem('_sys_session_active_key') === 'true';
   });
   const [appPasswordInput, setAppPasswordInput] = useState('');
   const [appPasswordError, setAppPasswordError] = useState('');
@@ -190,6 +199,55 @@ const App: React.FC = () => {
   const [adminError, setAdminError] = useState('');
   const [titleClickCount, setTitleClickCount] = useState(0);
   const [selectedPrizeForRigging, setSelectedPrizeForRigging] = useState<Prize | null>(null);
+  const [adminPin, setAdminPin] = useState<string>('hannn2');
+  const [mcPin, setMcPin] = useState<string>('hannn13');
+  const [isMcUnlocked, setIsMcUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('_sys_mc_unlocked_session_') === 'true' || localStorage.getItem('_sys_mc_unlocked_session_') === 'true';
+  });
+  const [showMcLoginModal, setShowMcLoginModal] = useState<boolean>(false);
+  const [mcInputCode, setMcInputCode] = useState<string>('');
+  const [mcError, setMcError] = useState<string>('');
+
+  // Realtime Cloud Sync via Firebase Firestore
+  useEffect(() => {
+    const unsubscribe = subscribeToCloudData((cloudData) => {
+      if (cloudData.employees && cloudData.employees.length > 0) {
+        setEmployees(cloudData.employees);
+      }
+      if (cloudData.prizes && cloudData.prizes.length > 0) {
+        setPrizes(cloudData.prizes);
+        setCurrentPrize(prev => {
+          if (!prev) return cloudData.prizes![0];
+          const match = cloudData.prizes!.find(p => p.id === prev.id);
+          return match || cloudData.prizes![0];
+        });
+      }
+      if (cloudData.winners !== undefined) {
+        setWinners(cloudData.winners);
+      }
+      if (cloudData.settings !== undefined) {
+        setSettings(prev => ({ ...prev, ...cloudData.settings }));
+      }
+      if (cloudData.riggedSettings !== undefined) {
+        setRiggedSettings(cloudData.riggedSettings);
+      }
+      if (cloudData.adminPin !== undefined && cloudData.adminPin) {
+        setAdminPin(cloudData.adminPin);
+      }
+      if (cloudData.mcPin !== undefined && cloudData.mcPin) {
+        setMcPin(cloudData.mcPin);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Auto transition to READY when setup data exists
+  useEffect(() => {
+    if (employees.length > 0 && prizes.length > 0 && appState === AppState.SETUP) {
+      setAppState(AppState.READY);
+    }
+  }, [employees.length, prizes.length]);
 
   // Sync state changes back to localStorage
   useEffect(() => {
@@ -553,16 +611,21 @@ const App: React.FC = () => {
     if (pendingWinners.length === 0) return;
 
     // 1. Thêm chính thức vào winners
-    setWinners(prev => [...pendingWinners, ...prev]);
+    const updatedWinners = [...pendingWinners, ...winners];
+    setWinners(updatedWinners);
+    addWinnersToCloud(pendingWinners);
 
     // 2. Trừ giải thưởng chính thức (nếu không ở demoMode)
     if (!settings.demoMode && currentPrize) {
+      const remainingQty = Math.max(0, currentPrize.quantity - pendingWinners.length);
       setPrizes(prev => {
-        const updated = prev.map(p => p.id === currentPrize.id ? { ...p, quantity: Math.max(0, p.quantity - pendingWinners.length) } : p);
+        const updated = prev.map(p => p.id === currentPrize.id ? { ...p, quantity: remainingQty } : p);
         const samplePrize = updated.find(p => p.id === currentPrize.id);
         if (samplePrize) setCurrentPrize(samplePrize);
+        syncPrizesToCloud(updated);
         return updated;
       });
+      updatePrizeCountCloud(currentPrize.id, remainingQty);
     }
 
     // 3. Reset các trạng thái và quay về READY
@@ -616,6 +679,11 @@ const App: React.FC = () => {
         localStorage.removeItem('_sys_yep_spin_count_');
         localStorage.removeItem('_sys_yep_spin_duration_');
         localStorage.removeItem('_sys_ui_theme_prefs_cache_');
+
+        clearWinnersInCloud();
+        syncEmployeesToCloud([]);
+        syncPrizesToCloud([]);
+        syncConfigToCloud(settings, adminPin, []);
         
         showAlert("Thành công", "Toàn bộ hệ thống đã được thiết lập lại từ đầu.");
         playSound('click');
@@ -628,6 +696,7 @@ const App: React.FC = () => {
   const handleDataUpdate = (type: 'employees' | 'prizes', data: any[]) => {
     if (type === 'employees') {
         setEmployees(data);
+        syncEmployeesToCloud(data);
         showAlert("Đã lưu", "Danh sách Cán bộ đã được cập nhật.");
     } else {
         // Calculation logic preserved
@@ -639,6 +708,7 @@ const App: React.FC = () => {
         });
 
         setPrizes(calculatedPrizes);
+        syncPrizesToCloud(calculatedPrizes);
 
         if (currentPrize && !calculatedPrizes.find((p: any) => p.id === currentPrize.id)) {
             setCurrentPrize(calculatedPrizes.length > 0 ? calculatedPrizes[0] : null);
@@ -650,16 +720,54 @@ const App: React.FC = () => {
     }
   };
 
+  const isCorrectAdminPassword = (input: string) => {
+    const clean = input.trim();
+    return clean === adminPin || clean === 'hannn2';
+  };
+
+  const isCorrectMcPassword = (input: string) => {
+    const clean = input.trim();
+    return clean === mcPin || clean === 'hannn13';
+  };
+
+  const handleSpinClick = () => {
+    if (!isMcUnlocked) {
+      setShowMcLoginModal(true);
+      setMcInputCode('');
+      setMcError('');
+      playSound('click');
+    } else {
+      startSpin();
+    }
+  };
+
+  const handleMcLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isCorrectMcPassword(mcInputCode)) {
+      setIsMcUnlocked(true);
+      localStorage.setItem('_sys_mc_unlocked_session_', 'true');
+      setShowMcLoginModal(false);
+      setMcError('');
+      playSound('click');
+      startSpin();
+    } else {
+      setMcError('Mật khẩu MC không đúng! Vui lòng nhập hannn13');
+    }
+  };
+
   const handleAppUnlockSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPwd = appPasswordInput.trim();
-    if (cleanPwd === 'hannn2') {
+    if (isCorrectAdminPassword(appPasswordInput) || isCorrectMcPassword(appPasswordInput)) {
       setIsAppUnlocked(true);
+      setIsMcUnlocked(true);
+      sessionStorage.setItem('_sys_session_active_key', 'true');
+      sessionStorage.setItem('_sys_mc_unlocked_session_', 'true');
       localStorage.setItem('_sys_session_active_key', 'true');
+      localStorage.setItem('_sys_mc_unlocked_session_', 'true');
       setAppPasswordError('');
       playSound('click');
     } else {
-      setAppPasswordError('Mã bảo mật sự kiện không đúng!');
+      setAppPasswordError('Mật khẩu không đúng! (MC: hannn13, Admin: hannn2)');
     }
   };
 
@@ -686,13 +794,13 @@ const App: React.FC = () => {
 
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminInputCode === 'hannn2') {
+    if (isCorrectAdminPassword(adminInputCode)) {
       setShowAdminLogin(false);
       setShowAdminPanel(true);
       setAdminError('');
       playSound('click');
     } else {
-      setAdminError('Mã khóa không chính xác! Vui lòng thử lại.');
+      setAdminError('Mã khóa Admin không chính xác! (Admin: hannn2)');
     }
   };
 
@@ -729,6 +837,7 @@ const App: React.FC = () => {
             <FileUpload label={t.importEmployees} accept=".xlsx, .xls" onFileSelect={async (f) => {
                 const data = await ExcelService.parseEmployees(f);
                 setEmployees(data);
+                syncEmployeesToCloud(data);
                 playSound('click');
             }} onDownloadTemplate={() => ExcelService.downloadTemplate('employee')} icon={<Users className="w-10 h-10 text-brand-yellow" />} />
             {employees.length > 0 && (
@@ -744,6 +853,7 @@ const App: React.FC = () => {
             <FileUpload label={t.importPrizes} accept=".xlsx, .xls" onFileSelect={async (f) => {
                 const data = await ExcelService.parsePrizes(f);
                 setPrizes(data);
+                syncPrizesToCloud(data);
                 if (data.length > 0) setCurrentPrize(data[0]);
                 playSound('click');
             }} onDownloadTemplate={() => ExcelService.downloadTemplate('prize')} icon={<Gift className="w-10 h-10 text-brand-yellow" />} />
@@ -863,6 +973,22 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 md:gap-3">
+                  <button
+                    onClick={() => {
+                      const next = !isMcUnlocked;
+                      setIsMcUnlocked(next);
+                      localStorage.setItem('_sys_mc_unlocked_session_', next.toString());
+                      if (!next) {
+                        showAlert("Đã khóa quyền MC", "Lượt quay tiếp theo sẽ yêu cầu nhập mật khẩu MC (hannn13).");
+                      }
+                      playSound('click');
+                    }}
+                    className={`px-3 py-2 rounded-full text-xs font-bold border transition flex items-center gap-1.5 ${isMcUnlocked ? 'bg-green-500/20 text-green-300 border-green-500/40 hover:bg-green-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'}`}
+                    title={isMcUnlocked ? 'Quyền MC đang mở. Bấm để khóa lại' : 'Đang khóa quyền quay. Yêu cầu nhập MK MC (hannn13)'}
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span className="hidden sm:inline">{isMcUnlocked ? 'MC: Đã Mở' : 'Khóa Quay MC'}</span>
+                  </button>
                   <button onClick={handleAdminClick} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.prizeStructure}><Settings className="w-5 h-5" /></button>
                   <button onClick={() => setShowDataManager(true)} className="p-2.5 md:p-3 bg-brand-emerald/30 text-brand-yellow rounded-full border border-brand-yellow/20 hover:bg-brand-emerald/50 transition" title={t.manageData}><Edit3 className="w-5 h-5" /></button>
                   {/* REMOVED SETTINGS BUTTON HERE */}
@@ -997,7 +1123,7 @@ const App: React.FC = () => {
                   </div>
               </div>
 
-              <button onClick={startSpin} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
+              <button onClick={handleSpinClick} disabled={!currentPrize || currentPrize.quantity === 0} className="group relative px-20 py-8 bg-gradient-to-b from-brand-yellow to-yellow-600 text-brand-emeraldDark font-display font-black text-3xl md:text-5xl rounded-full shadow-[0_12px_0_#b45309,0_30px_60px_rgba(0,0,0,0.6)] active:shadow-none active:translate-y-2 uppercase tracking-tighter hover:scale-[1.02] transition-transform">
                 {t.spinNow}
               </button>
             </div>
@@ -1216,7 +1342,11 @@ const App: React.FC = () => {
           <button 
             onClick={() => {
               setIsAppUnlocked(false);
+              setIsMcUnlocked(false);
+              sessionStorage.removeItem('_sys_session_active_key');
+              sessionStorage.removeItem('_sys_mc_unlocked_session_');
               localStorage.removeItem('_sys_session_active_key');
+              localStorage.removeItem('_sys_mc_unlocked_session_');
               playSound('click');
             }}
             className="absolute top-4 right-4 z-[90] p-2 bg-black/30 border border-white/10 text-gray-400 hover:text-red-400 hover:border-red-500/30 rounded-xl transition flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
@@ -1267,6 +1397,54 @@ const App: React.FC = () => {
                   <button onClick={() => setModal({ ...modal, isOpen: false })} className="w-full py-5 bg-brand-yellow text-brand-emeraldDark font-black rounded-2xl uppercase tracking-widest text-sm active:scale-95">Đã hiểu</button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MC Login Modal */}
+      {showMcLoginModal && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+          <div className="bg-brand-emeraldDark border-2 border-brand-yellow/50 p-8 rounded-[32px] w-full max-w-md shadow-[0_0_80px_rgba(255,198,47,0.4)] relative text-center">
+            <button onClick={() => setShowMcLoginModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white p-2">
+              <X className="w-6 h-6" />
+            </button>
+            <div className="flex flex-col items-center gap-4">
+              <div className="bg-brand-yellow/20 p-4 rounded-full text-brand-yellow border border-brand-yellow/40">
+                <Lock className="w-10 h-10" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-white uppercase tracking-wider font-display">Mật Khẩu MC Điều Khiển</h2>
+                <p className="text-teal-100/80 text-xs mt-1">Nhập mật khẩu người điều khiển quay (MC: <span className="text-brand-yellow font-bold font-mono">hannn13</span>) để kích hoạt lượt quay.</p>
+              </div>
+
+              <form onSubmit={handleMcLoginSubmit} className="w-full mt-2 space-y-4">
+                <input 
+                  type="password" 
+                  placeholder="Nhập mật khẩu MC (hannn13)..." 
+                  value={mcInputCode}
+                  onChange={(e) => setMcInputCode(e.target.value)}
+                  className="w-full p-4 bg-black/50 border-2 border-brand-yellow/30 rounded-xl text-center text-white focus:outline-none focus:border-brand-yellow font-mono text-xl placeholder:text-gray-500"
+                  autoFocus
+                />
+                {mcError && <p className="text-red-400 text-xs font-bold animate-pulse">{mcError}</p>}
+                
+                <div className="flex gap-3">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowMcLoginModal(false)}
+                    className="flex-1 py-4 bg-white/10 text-white font-bold rounded-xl uppercase tracking-wider text-xs hover:bg-white/20 transition"
+                  >
+                    Hủy
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 py-4 bg-gradient-to-r from-brand-yellow to-yellow-400 text-brand-emeraldDark font-black rounded-xl uppercase tracking-widest text-xs transition hover:scale-105 active:scale-95 shadow-lg"
+                  >
+                    Xác nhận quay
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -1370,10 +1548,46 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
+                    <Key className="w-3.5 h-3.5 text-brand-yellow" />
+                    <span className="text-xs text-brand-yellow font-bold uppercase">MK Admin:</span>
+                    <input 
+                      type="text"
+                      value={adminPin}
+                      onChange={(e) => {
+                        const newPin = e.target.value;
+                        setAdminPin(newPin);
+                        syncConfigToCloud(settings, newPin, riggedSettings, mcPin);
+                      }}
+                      className="w-24 px-2 py-0.5 bg-black/50 border border-brand-yellow/30 rounded text-xs text-white text-center font-mono focus:outline-none focus:border-brand-yellow"
+                      placeholder="hannn2"
+                      title="Mật khẩu Admin quản trị"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
+                    <Lock className="w-3.5 h-3.5 text-brand-yellow" />
+                    <span className="text-xs text-brand-yellow font-bold uppercase">MK MC Quay:</span>
+                    <input 
+                      type="text"
+                      value={mcPin}
+                      onChange={(e) => {
+                        const newMc = e.target.value;
+                        setMcPin(newMc);
+                        syncConfigToCloud(settings, adminPin, riggedSettings, newMc);
+                      }}
+                      className="w-24 px-2 py-0.5 bg-black/50 border border-brand-yellow/30 rounded text-xs text-white text-center font-mono focus:outline-none focus:border-brand-yellow"
+                      placeholder="hannn13"
+                      title="Mật khẩu MC / Điều khiển quay"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-xl border border-white/10">
                     <span className="text-xs text-brand-yellow font-bold uppercase">Mừng hụt:</span>
                     <button 
                       onClick={() => {
-                        setSettings(prev => ({ ...prev, enableTease: !prev.enableTease }));
+                        const newSettings = { ...settings, enableTease: !settings.enableTease };
+                        setSettings(newSettings);
+                        syncConfigToCloud(newSettings, adminPin, riggedSettings);
                         playSound('click');
                       }}
                       className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${settings.enableTease ? 'bg-amber-400 text-black shadow-md font-black' : 'bg-white/10 text-gray-400 hover:text-white'}`}
@@ -1444,7 +1658,9 @@ const App: React.FC = () => {
                                   </div>
                                   <button 
                                     onClick={() => {
-                                      setRiggedSettings(prev => prev.filter(item => !(item.prizeId === selectedPrizeForRigging.id && item.employeeId === rs.employeeId)));
+                                      const updated = riggedSettings.filter(item => !(item.prizeId === selectedPrizeForRigging.id && item.employeeId === rs.employeeId));
+                                      setRiggedSettings(updated);
+                                      syncConfigToCloud(settings, adminPin, updated);
                                       playSound('click');
                                     }}
                                     className="p-1 hover:bg-red-500/10 text-gray-400 hover:text-red-400 rounded transition shrink-0"
@@ -1479,7 +1695,9 @@ const App: React.FC = () => {
                                   return;
                                 }
                                 
-                                setRiggedSettings(prev => [...prev, { prizeId: selectedPrizeForRigging.id, employeeId: empId }]);
+                                const updated = [...riggedSettings, { prizeId: selectedPrizeForRigging.id, employeeId: empId }];
+                                setRiggedSettings(updated);
+                                syncConfigToCloud(settings, adminPin, updated);
                                 playSound('click');
                                 e.target.value = "";
                               }}

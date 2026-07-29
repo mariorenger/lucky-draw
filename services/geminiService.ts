@@ -29,7 +29,7 @@ export const generateCongratulation = async (employee: Employee, prizeName: stri
     `;
 
     const prompt = `
-      Nhiệm vụ: Viết một lời chúc mừng trúng thưởng cực kỳ sôi động, hài hước và cá nhân hóa cho nhân viên trong buổi tiệc tất niên (Year End Party) hoặc lễ bốc thăm may mắn.
+      Nhiệm vụ: Viết một lời chúc mừng trúng thưởng cực kỳ sôi động, hài hước và cá nhân hóa cho nhân viên trong buổi tiệc bốc thăm may mắn.
       
       Thông tin người trúng giải:
       ${employeeDetails}

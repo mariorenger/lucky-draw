@@ -34,6 +34,7 @@ export interface Settings {
   demoMode: boolean; // If true, doesn't reduce prize count
   confettiEnabled: boolean;
   enableTease?: boolean; // Hiệu ứng mừng hụt (mặc định false - quay thẳng ra người trúng)
+  adminPin?: string; // Mật khẩu quản trị Admin Setup
 }
 
 export interface RiggedSetting {
